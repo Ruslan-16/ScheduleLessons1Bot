@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackContext, ChatMemberHandler
 
-# Загружаем переменные окружения из настроек Timeweb
+# Загружаем переменные окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 DB_PATH = "schedule.db"  # Путь к базе данных SQLite
@@ -34,7 +34,7 @@ def init_db():
         ''')
         conn.commit()
 
-# Создаем клавиатуру для администратора с добавленной командой /remove_schedule
+# Создаем клавиатуру для администратора
 def get_admin_keyboard():
     keyboard = [
         ["/schedule", "/remove_schedule"],
@@ -42,7 +42,7 @@ def get_admin_keyboard():
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
 
-# Команда /start для регистрации пользователя и отображения клавиатуры администратора
+# Команда /start для регистрации пользователя
 async def start(update: Update, context: CallbackContext):
     user = update.effective_user
     with sqlite3.connect(DB_PATH) as conn:
@@ -51,7 +51,6 @@ async def start(update: Update, context: CallbackContext):
                        (user.id, user.username, user.first_name))
         conn.commit()
 
-    # Проверка, является ли пользователь администратором, чтобы показать ему клавиатуру
     if user.id == ADMIN_ID:
         await update.message.reply_text(
             "Вы зарегистрированы как администратор! Доступные команды:",
@@ -60,7 +59,7 @@ async def start(update: Update, context: CallbackContext):
     else:
         await update.message.reply_text("Вы зарегистрированы! Вы будете получать напоминания о занятиях.")
 
-# Команда /schedule для добавления нескольких занятий для разных пользователей (только администратор)
+# Команда /schedule для добавления расписания (только администратор)
 async def schedule(update: Update, context: CallbackContext):
     user = update.effective_user
     if user.id != ADMIN_ID:
@@ -105,7 +104,7 @@ async def schedule(update: Update, context: CallbackContext):
         await update.message.reply_text(
             "Ошибка в формате команды или указаны неверные username'ы. Пожалуйста, проверьте правильность ввода.")
 
-# Команда /remove_schedule для удаления расписания ученика (только администратор)
+# Команда /remove_schedule для удаления расписания (только администратор)
 async def remove_schedule(update: Update, context: CallbackContext):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("У вас нет прав для удаления расписания.")
@@ -130,7 +129,7 @@ async def remove_schedule(update: Update, context: CallbackContext):
         else:
             await update.message.reply_text(f"Пользователь @{username} не найден.")
 
-# Команда /my_schedule для просмотра расписания ученика
+# Команда /my_schedule для просмотра расписания
 async def my_schedule(update: Update, context: CallbackContext):
     user = update.effective_user
     with sqlite3.connect(DB_PATH) as conn:
@@ -147,7 +146,7 @@ async def my_schedule(update: Update, context: CallbackContext):
         text += f"{day} {time} - {description}\n"
     await update.message.reply_text(text)
 
-# Команда /users для отображения списка зарегистрированных пользователей с именами (доступно только администратору)
+# Команда /users для отображения списка пользователей (только администратор)
 async def list_users(update: Update, context: CallbackContext):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("У вас нет прав для просмотра списка пользователей.")
@@ -178,7 +177,7 @@ async def handle_chat_member_update(update: Update, context: CallbackContext):
             conn.commit()
         print(f"Пользователь {user_id} удален из базы данных после удаления бота.")
 
-# Функция для отправки напоминаний и сброса напоминаний каждую неделю
+# Функция для отправки напоминаний
 async def send_reminders(application: Application):
     now = datetime.now()
 
@@ -237,7 +236,7 @@ def main():
     # Запуск задачи для отправки напоминаний каждую минуту
     application.job_queue.run_repeating(send_reminders, interval=60, first=10)
 
-    # Запуск бота
+    # Запуск бота в режиме Polling
     application.run_polling()
 
 if __name__ == "__main__":
