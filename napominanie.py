@@ -16,6 +16,14 @@ DB_PATH = "schedule.db"  # Путь к базе данных SQLite
 # Кастомный HTTP-сервер для возврата HTTP 200 OK на все запросы
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
+        # Обработка всех GET-запросов, возвращая 200 OK
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"OK")
+
+    def do_POST(self):
+        # Обработка всех POST-запросов, возвращая 200 OK
         self.send_response(200)
         self.send_header("Content-type", "text/plain")
         self.end_headers()
@@ -96,7 +104,8 @@ async def schedule(update: Update, context: CallbackContext):
 
     if len(context.args) < 2:
         await update.message.reply_text(
-            "Использование: /schedule @username1 день1 время1 описание1; @username2 день2 время2 описание2; ...")
+            "Использование: /schedule @username1 день1 время1 описание1; @username2 день2 время2 описание2; ..."
+        )
         return
 
     schedule_text = " ".join(context.args)
@@ -130,7 +139,8 @@ async def schedule(update: Update, context: CallbackContext):
         await update.message.reply_text(confirmation)
     else:
         await update.message.reply_text(
-            "Ошибка в формате команды или указаны неверные username'ы. Пожалуйста, проверьте правильность ввода.")
+            "Ошибка в формате команды или указаны неверные username'ы. Пожалуйста, проверьте правильность ввода."
+        )
 
 
 # Команда /remove_schedule для удаления расписания (только администратор)
