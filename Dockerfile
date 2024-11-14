@@ -10,8 +10,6 @@ COPY . /app
 # Устанавливаем зависимости
 RUN pip install -r requirements.txt
 
-# Открываем порт 5000 (если требуется)
-EXPOSE 5000
-
 # Запуск приложения
 CMD ["python", "napominanie.py"]
+
