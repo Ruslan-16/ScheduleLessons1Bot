@@ -5,20 +5,29 @@ from datetime import datetime, timedelta
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackContext, ChatMemberHandler
 import threading
-from http.server import SimpleHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 # Загружаем переменные окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 DB_PATH = "schedule.db"  # Путь к базе данных SQLite
 
-# Функция для запуска простого HTTP-сервера для Timeweb
+# Кастомный HTTP-сервер для возврата HTTP 200 OK
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"OK")
+
 def run_http_server():
-    server = HTTPServer(('0.0.0.0', 5000), SimpleHTTPRequestHandler)
+    server = HTTPServer(('0.0.0.0', 5000), HealthCheckHandler)
     server.serve_forever()
 
 # Запуск HTTP-сервера в фоновом потоке
 threading.Thread(target=run_http_server, daemon=True).start()
+
+# Остальной код бота
 
 # Инициализация базы данных
 def init_db():
