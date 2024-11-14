@@ -267,6 +267,10 @@ def main():
     init_db()
     application = Application.builder().token(BOT_TOKEN).build()
 
+    # Проверяем и инициализируем JobQueue
+    if application.job_queue is None:
+        application.job_queue = application.job_queue_factory()
+
     # Регистрация команд
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("schedule", schedule))
