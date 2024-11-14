@@ -4,11 +4,21 @@ import sqlite3
 from datetime import datetime, timedelta
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackContext, ChatMemberHandler
+import threading
+from http.server import SimpleHTTPRequestHandler, HTTPServer
 
 # Загружаем переменные окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 DB_PATH = "schedule.db"  # Путь к базе данных SQLite
+
+# Функция для запуска простого HTTP-сервера для Timeweb
+def run_http_server():
+    server = HTTPServer(('0.0.0.0', 5000), SimpleHTTPRequestHandler)
+    server.serve_forever()
+
+# Запуск HTTP-сервера в фоновом потоке
+threading.Thread(target=run_http_server, daemon=True).start()
 
 # Инициализация базы данных
 def init_db():
