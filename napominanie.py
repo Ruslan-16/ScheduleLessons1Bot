@@ -224,8 +224,8 @@ async def send_reminders(application: Application):
                 cursor.execute('UPDATE schedule SET reminder_sent = 1 WHERE id = ?', (lesson_id,))
                 conn.commit()
 
-            # Еженедельный сброс напоминаний (например, каждое воскресенье в 23:59)
-            if now.weekday() == 6 and now.hour == 23 and now.minute == 59:
+            # Еженедельный сброс напоминаний (например, каждое субботу в 23:59)
+            if now.weekday() == 5 and now.hour == 23 and now.minute == 59:
                 cursor.execute('UPDATE schedule SET reminder_sent = 0')
                 conn.commit()
 
