@@ -1,14 +1,17 @@
-# Используем образ Python 3.9
-FROM python:3.9
+# Используем официальный Python образ
+FROM python:3.9-slim
 
 # Устанавливаем рабочую директорию
 WORKDIR /app
 
 # Копируем файлы проекта в контейнер
-COPY . /app
+COPY . .
 
 # Устанавливаем зависимости
-RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Запуск приложения
-CMD ["python", "reminder_bot.py"]
+# Открываем порт 5000 для приложения
+EXPOSE 5000
+
+# Запускаем приложение
+CMD ["python", "your_bot_script.py"]
