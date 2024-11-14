@@ -269,6 +269,7 @@ def main():
 
     # Проверяем и инициализируем JobQueue
     if application.job_queue is None:
+        print("JobQueue не инициализирована!")
         application.job_queue = application.job_queue_factory()
 
     # Регистрация команд

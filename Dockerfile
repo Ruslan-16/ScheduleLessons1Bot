@@ -8,9 +8,10 @@ WORKDIR /app
 COPY . /app
 
 # Устанавливаем зависимости
+RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
 
-# Открываем порт 5000 (даже если он не используется)
+# Открываем порт 5000 (если требуется)
 EXPOSE 5000
 
 # Запуск приложения
