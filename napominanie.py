@@ -12,6 +12,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 DB_PATH = "schedule.db"  # Путь к базе данных SQLite
 
+
 # Кастомный HTTP-сервер для возврата HTTP 200 OK на все запросы
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -27,14 +28,17 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"OK")
 
     def log_message(self, format, *args):
-        return  # Отключаем вывод логов от HTTP-сервера
+        return
+
 
 def run_http_server():
     server = HTTPServer(('0.0.0.0', 5000), HealthCheckHandler)
     server.serve_forever()
 
+
 # Запуск HTTP-сервера в фоновом потоке
 threading.Thread(target=run_http_server, daemon=True).start()
+
 
 # Инициализация базы данных
 def init_db():
@@ -60,13 +64,16 @@ def init_db():
         ''')
         conn.commit()
 
+
 # Создаем клавиатуру для администратора
 def get_admin_keyboard():
     keyboard = [
         ["/schedule", "/remove_schedule"],
-        ["/users", "/my_schedule"]
+        ["/users", "/my_schedule"],
+        ["/all_schedules"]  # Новая команда для просмотра расписания всех пользователей
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
+
 
 # Команда /start для регистрации пользователя
 async def start(update: Update, context: CallbackContext):
@@ -84,6 +91,7 @@ async def start(update: Update, context: CallbackContext):
         )
     else:
         await update.message.reply_text("Вы зарегистрированы! Вы будете получать напоминания о занятиях.")
+
 
 # Команда /schedule для добавления расписания (только администратор)
 async def schedule(update: Update, context: CallbackContext):
@@ -132,6 +140,7 @@ async def schedule(update: Update, context: CallbackContext):
             "Ошибка в формате команды или указаны неверные username'ы. Пожалуйста, проверьте правильность ввода."
         )
 
+
 # Команда /remove_schedule для удаления расписания (только администратор)
 async def remove_schedule(update: Update, context: CallbackContext):
     if update.effective_user.id != ADMIN_ID:
@@ -157,6 +166,7 @@ async def remove_schedule(update: Update, context: CallbackContext):
         else:
             await update.message.reply_text(f"Пользователь @{username} не найден.")
 
+
 # Команда /my_schedule для просмотра расписания
 async def my_schedule(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -173,6 +183,33 @@ async def my_schedule(update: Update, context: CallbackContext):
     for day, time, description in schedule:
         text += f"{day} {time} - {description}\n"
     await update.message.reply_text(text)
+
+
+# Команда /all_schedules для просмотра расписаний всех пользователей (только администратор)
+async def all_schedules(update: Update, context: CallbackContext):
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("У вас нет прав для просмотра расписания всех пользователей.")
+        return
+
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT u.first_name, u.username, s.day, s.time, s.description
+            FROM schedule s
+            JOIN users u ON s.user_id = u.user_id
+            ORDER BY s.day, s.time
+        ''')
+        schedules = cursor.fetchall()
+
+    if not schedules:
+        await update.message.reply_text("Расписание всех пользователей пусто.")
+        return
+
+    text = "Расписание всех пользователей:\n\n"
+    for first_name, username, day, time, description in schedules:
+        text += f"{first_name} (@{username}) - {day} {time}: {description}\n"
+    await update.message.reply_text(text)
+
 
 # Команда /users для отображения списка пользователей (только администратор)
 async def list_users(update: Update, context: CallbackContext):
@@ -194,6 +231,7 @@ async def list_users(update: Update, context: CallbackContext):
         text += f"{first_name} (@{username})\n"
     await update.message.reply_text(text)
 
+
 # Обработчик удаления пользователя при выходе из чата с ботом
 async def handle_chat_member_update(update: Update, context: CallbackContext):
     if update.my_chat_member.new_chat_member.status == 'kicked':
@@ -204,6 +242,7 @@ async def handle_chat_member_update(update: Update, context: CallbackContext):
             cursor.execute('DELETE FROM schedule WHERE user_id = ?', (user_id,))
             conn.commit()
         print(f"Пользователь {user_id} удален из базы данных после удаления бота.")
+
 
 # Функция для отправки напоминаний
 async def send_reminders(application: Application):
@@ -218,18 +257,13 @@ async def send_reminders(application: Application):
         lesson_id, user_id, day, time, description, reminder_sent = record
 
         try:
-            day_of_week = datetime.strptime(day, "%A").weekday()  # Понедельник = 0, Воскресенье = 6
+            day_of_week = datetime.strptime(day, "%A").weekday()
             lesson_time = datetime.strptime(time, "%H:%M").time()
-
-            # Находим дату и время занятия
             lesson_datetime = datetime.combine(now, lesson_time)
             days_diff = (day_of_week - now.weekday()) % 7
             lesson_datetime = lesson_datetime + timedelta(days=days_diff)
-
-            # Время для отправки напоминания за 1 час до занятия
             reminder_time = lesson_datetime - timedelta(hours=1)
 
-            # Отправляем напоминание и отмечаем, что оно отправлено
             if reminder_sent == 0 and reminder_time <= now < lesson_datetime:
                 await application.bot.send_message(
                     chat_id=user_id,
@@ -238,13 +272,13 @@ async def send_reminders(application: Application):
                 cursor.execute('UPDATE schedule SET reminder_sent = 1 WHERE id = ?', (lesson_id,))
                 conn.commit()
 
-            # Еженедельный сброс напоминаний (например, каждое субботу в 23:59)
             if now.weekday() == 5 and now.hour == 23 and now.minute == 59:
                 cursor.execute('UPDATE schedule SET reminder_sent = 0')
                 conn.commit()
 
         except Exception as e:
             print(f"Ошибка при отправке напоминания: {e}")
+
 
 # Основная функция для запуска бота
 def main():
@@ -257,19 +291,17 @@ def main():
     application.add_handler(CommandHandler("remove_schedule", remove_schedule))
     application.add_handler(CommandHandler("my_schedule", my_schedule))
     application.add_handler(CommandHandler("users", list_users))
+    application.add_handler(CommandHandler("all_schedules", all_schedules))  # Регистрация новой команды
 
     # Регистрация обработчика для удаления пользователя
     application.add_handler(ChatMemberHandler(handle_chat_member_update, ChatMemberHandler.MY_CHAT_MEMBER))
 
     # Запуск задачи для отправки напоминаний каждую минуту
-    try:
-        application.job_queue.run_repeating(send_reminders, interval=60, first=10)
-        print("Запуск задачи для отправки напоминаний выполнен успешно.")
-    except AttributeError as e:
-        print(f"Ошибка при запуске задачи JobQueue: {e}")
+    application.job_queue.run_repeating(send_reminders, interval=60, first=10)
 
     # Запуск бота в режиме Polling
     application.run_polling()
+
 
 if __name__ == "__main__":
     main()
