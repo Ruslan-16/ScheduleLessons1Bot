@@ -2,7 +2,7 @@ import os
 import re
 import sqlite3
 from datetime import datetime, timedelta
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
+from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackContext, ChatMemberHandler
 
 # Загружаем переменные окружения
@@ -36,24 +36,22 @@ def init_db():
         conn.commit()
 
 
-# Клавиатура для администратора (с двумя рядами кнопок)
+# Создаем клавиатуру для администратора
 def get_admin_keyboard():
     keyboard = [
-        [KeyboardButton("/schedule"), KeyboardButton("/remove_schedule")],
-        [KeyboardButton("/users"), KeyboardButton("/my_schedule")]
+        ["/schedule", "/remove_schedule"],
+        ["/users", "/my_schedule"]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
 
 
-# Клавиатура для ученика (с одной кнопкой)
-def get_user_keyboard():
-    keyboard = [
-        [KeyboardButton("/my_schedule")]
-    ]
+# Создаем клавиатуру для учеников
+def get_student_keyboard():
+    keyboard = [["/my_schedule"]]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
 
 
-# Команда /start для регистрации пользователя и показа клавиатуры
+# Команда /start для регистрации пользователя
 async def start(update: Update, context: CallbackContext):
     user = update.effective_user
     with sqlite3.connect(DB_PATH) as conn:
@@ -62,7 +60,7 @@ async def start(update: Update, context: CallbackContext):
                        (user.id, user.username, user.first_name))
         conn.commit()
 
-    # Показ клавиатуры в зависимости от роли
+    # Устанавливаем разную клавиатуру для администратора и ученика
     if user.id == ADMIN_ID:
         await update.message.reply_text(
             "Вы зарегистрированы как администратор! Доступные команды:",
@@ -70,8 +68,8 @@ async def start(update: Update, context: CallbackContext):
         )
     else:
         await update.message.reply_text(
-            "Вы зарегистрированы! Вы будете получать напоминания о занятиях.",
-            reply_markup=get_user_keyboard()
+            "Вы зарегистрированы! Доступна команда /my_schedule для просмотра вашего расписания.",
+            reply_markup=get_student_keyboard()
         )
 
 
@@ -215,7 +213,7 @@ def main():
 
     # Регистрация команд
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("schedule", schedule))  # Добавлен обработчик для /schedule
+    application.add_handler(CommandHandler("schedule", schedule))
     application.add_handler(CommandHandler("my_schedule", my_schedule))
     application.add_handler(CommandHandler("users", list_users))
     application.add_handler(CommandHandler("remove_schedule", remove_schedule))
