@@ -12,36 +12,29 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 DB_PATH = "schedule.db"  # Путь к базе данных SQLite
 
-
 # Кастомный HTTP-сервер для возврата HTTP 200 OK на все запросы
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        # Обработка всех GET-запросов, возвращая 200 OK
         self.send_response(200)
         self.send_header("Content-type", "text/plain")
         self.end_headers()
         self.wfile.write(b"OK")
 
     def do_POST(self):
-        # Обработка всех POST-запросов, возвращая 200 OK
         self.send_response(200)
         self.send_header("Content-type", "text/plain")
         self.end_headers()
         self.wfile.write(b"OK")
 
     def log_message(self, format, *args):
-        # Отключаем вывод логов от HTTP-сервера
-        return
-
+        return  # Отключаем вывод логов от HTTP-сервера
 
 def run_http_server():
     server = HTTPServer(('0.0.0.0', 5000), HealthCheckHandler)
     server.serve_forever()
 
-
 # Запуск HTTP-сервера в фоновом потоке
 threading.Thread(target=run_http_server, daemon=True).start()
-
 
 # Инициализация базы данных
 def init_db():
@@ -67,7 +60,6 @@ def init_db():
         ''')
         conn.commit()
 
-
 # Создаем клавиатуру для администратора
 def get_admin_keyboard():
     keyboard = [
@@ -75,7 +67,6 @@ def get_admin_keyboard():
         ["/users", "/my_schedule"]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
-
 
 # Команда /start для регистрации пользователя
 async def start(update: Update, context: CallbackContext):
@@ -93,7 +84,6 @@ async def start(update: Update, context: CallbackContext):
         )
     else:
         await update.message.reply_text("Вы зарегистрированы! Вы будете получать напоминания о занятиях.")
-
 
 # Команда /schedule для добавления расписания (только администратор)
 async def schedule(update: Update, context: CallbackContext):
@@ -142,7 +132,6 @@ async def schedule(update: Update, context: CallbackContext):
             "Ошибка в формате команды или указаны неверные username'ы. Пожалуйста, проверьте правильность ввода."
         )
 
-
 # Команда /remove_schedule для удаления расписания (только администратор)
 async def remove_schedule(update: Update, context: CallbackContext):
     if update.effective_user.id != ADMIN_ID:
@@ -168,7 +157,6 @@ async def remove_schedule(update: Update, context: CallbackContext):
         else:
             await update.message.reply_text(f"Пользователь @{username} не найден.")
 
-
 # Команда /my_schedule для просмотра расписания
 async def my_schedule(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -185,7 +173,6 @@ async def my_schedule(update: Update, context: CallbackContext):
     for day, time, description in schedule:
         text += f"{day} {time} - {description}\n"
     await update.message.reply_text(text)
-
 
 # Команда /users для отображения списка пользователей (только администратор)
 async def list_users(update: Update, context: CallbackContext):
@@ -207,7 +194,6 @@ async def list_users(update: Update, context: CallbackContext):
         text += f"{first_name} (@{username})\n"
     await update.message.reply_text(text)
 
-
 # Обработчик удаления пользователя при выходе из чата с ботом
 async def handle_chat_member_update(update: Update, context: CallbackContext):
     if update.my_chat_member.new_chat_member.status == 'kicked':
@@ -218,7 +204,6 @@ async def handle_chat_member_update(update: Update, context: CallbackContext):
             cursor.execute('DELETE FROM schedule WHERE user_id = ?', (user_id,))
             conn.commit()
         print(f"Пользователь {user_id} удален из базы данных после удаления бота.")
-
 
 # Функция для отправки напоминаний
 async def send_reminders(application: Application):
@@ -261,16 +246,10 @@ async def send_reminders(application: Application):
         except Exception as e:
             print(f"Ошибка при отправке напоминания: {e}")
 
-
 # Основная функция для запуска бота
 def main():
     init_db()
     application = Application.builder().token(BOT_TOKEN).build()
-
-    # Проверяем и инициализируем JobQueue
-    if application.job_queue is None:
-        print("JobQueue не инициализирована!")
-        application.job_queue = application.job_queue_factory()
 
     # Регистрация команд
     application.add_handler(CommandHandler("start", start))
@@ -283,11 +262,14 @@ def main():
     application.add_handler(ChatMemberHandler(handle_chat_member_update, ChatMemberHandler.MY_CHAT_MEMBER))
 
     # Запуск задачи для отправки напоминаний каждую минуту
-    application.job_queue.run_repeating(send_reminders, interval=60, first=10)
+    try:
+        application.job_queue.run_repeating(send_reminders, interval=60, first=10)
+        print("Запуск задачи для отправки напоминаний выполнен успешно.")
+    except AttributeError as e:
+        print(f"Ошибка при запуске задачи JobQueue: {e}")
 
     # Запуск бота в режиме Polling
     application.run_polling()
-
 
 if __name__ == "__main__":
     main()
