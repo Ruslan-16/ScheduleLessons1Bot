@@ -75,6 +75,54 @@ async def start(update: Update, context: CallbackContext):
         )
 
 
+# Команда /schedule для добавления расписания (только администратор)
+async def schedule(update: Update, context: CallbackContext):
+    user = update.effective_user
+    if user.id != ADMIN_ID:
+        await update.message.reply_text("У вас нет прав для изменения расписания.")
+        return
+
+    if len(context.args) < 2:
+        await update.message.reply_text(
+            "Использование: /schedule @username1 день1 время1 описание1; @username2 день2 время2 описание2; ..."
+        )
+        return
+
+    schedule_text = " ".join(context.args)
+    entries = schedule_text.split(";")
+    added_entries = []
+
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+
+        for entry in entries:
+            match = re.match(r"@(\S+)\s+(\S+)\s+(\S+)\s+(.+)", entry.strip())
+            if match:
+                username, day, time, description = match.groups()
+                cursor.execute('SELECT user_id FROM users WHERE username = ?', (username,))
+                result = cursor.fetchone()
+
+                if result:
+                    user_id = result[0]
+                    cursor.execute('''
+                        INSERT INTO schedule (user_id, day, time, description, reminder_sent)
+                        VALUES (?, ?, ?, ?, 0)
+                    ''', (user_id, day, time, description))
+                    added_entries.append(f"@{username} {day} {time} - {description}")
+                else:
+                    await update.message.reply_text(f"Пользователь @{username} не найден.")
+
+        conn.commit()
+
+    if added_entries:
+        confirmation = "Занятия добавлены в расписание:\n" + "\n".join(added_entries)
+        await update.message.reply_text(confirmation)
+    else:
+        await update.message.reply_text(
+            "Ошибка в формате команды или указаны неверные username'ы. Пожалуйста, проверьте правильность ввода."
+        )
+
+
 # Команда /my_schedule для просмотра расписания
 async def my_schedule(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -167,6 +215,7 @@ def main():
 
     # Регистрация команд
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("schedule", schedule))  # Добавлен обработчик для /schedule
     application.add_handler(CommandHandler("my_schedule", my_schedule))
     application.add_handler(CommandHandler("users", list_users))
     application.add_handler(CommandHandler("remove_schedule", remove_schedule))
