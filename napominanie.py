@@ -158,6 +158,10 @@ async def students(update: Update, context: CallbackContext):
         return
 
     data = load_data()
+    if not data["users"]:
+        await update.message.reply_text("Список учеников пуст.")
+        return
+
     students_text = "Список учеников:\n"
     for user_id, info in data["users"].items():
         students_text += f"{info['first_name']} (@{info['username']})\n"
