@@ -7,7 +7,14 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # Загружаем переменные окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
+ADMIN_ID = os.getenv("ADMIN_ID")
+
+if not BOT_TOKEN:
+    raise ValueError("Переменная окружения BOT_TOKEN не установлена!")
+if not ADMIN_ID:
+    raise ValueError("Переменная окружения ADMIN_ID не установлена!")
+
+ADMIN_ID = int(ADMIN_ID)
 JSON_DB_PATH = "users.json"  # Путь к JSON-файлу для хранения данных
 
 # Инициализация JSON-базы данных (создает файл, если его нет)
@@ -23,12 +30,28 @@ def save_data(data):
 
 # Загрузка данных из JSON-файла
 def load_data():
+    if not os.path.exists(JSON_DB_PATH):
+        init_json_db()
+
     with open(JSON_DB_PATH, 'r') as f:
-        return json.load(f)
+        try:
+            data = json.load(f)
+        except json.JSONDecodeError:
+            data = {"users": {}, "schedule": {}, "standard_schedule": {}}
+
+    # Проверяем, что структура данных корректна
+    for key in ["users", "schedule", "standard_schedule"]:
+        if key not in data:
+            data[key] = {}
+
+    return data
 
 # Добавление пользователя
 def add_user(user_id, username, first_name):
     data = load_data()
+    if "users" not in data:
+        data["users"] = {}
+
     data["users"][str(user_id)] = {
         "username": username,
         "first_name": first_name
@@ -72,13 +95,28 @@ def is_valid_time(time_str):
     except ValueError:
         return False
 
+# Преобразование дня недели
+def translate_day_to_english(day):
+    days_map = {
+        "Понедельник": "Monday",
+        "Вторник": "Tuesday",
+        "Среда": "Wednesday",
+        "Четверг": "Thursday",
+        "Пятница": "Friday",
+        "Суббота": "Saturday",
+        "Воскресенье": "Sunday"
+    }
+    return days_map.get(day, "Invalid")
+
 # Напоминание о занятии
 async def send_reminders(context: CallbackContext):
     data = load_data()
     now = datetime.now()
     for user_id, entries in data.get("schedule", {}).items():
         for entry in entries:
-            day_time = f"{entry['day']} {entry['time']}"
+            day_time = f"{translate_day_to_english(entry['day'])} {entry['time']}"
+            if "Invalid" in day_time:
+                continue  # Пропускаем некорректные записи
             try:
                 entry_time = datetime.strptime(day_time, "%A %H:%M")
             except ValueError:
@@ -145,7 +183,6 @@ async def edit_schedule(update: Update, context: CallbackContext):
         await update.message.reply_text("Ошибка: время должно быть в формате ЧЧ:ММ (например, 15:30).")
         return
 
-    # Найти user_id по username
     data = load_data()
     user_id = next((uid for uid, info in data["users"].items() if info["username"] == username.lstrip('@')), None)
 
@@ -153,33 +190,33 @@ async def edit_schedule(update: Update, context: CallbackContext):
         await update.message.reply_text(f"Пользователь @{username} не найден.")
         return
 
-    index = int(index) - 1  # Привести индекс к корректному виду
-    if user_id in data["schedule"] and 0 <= index < len(data["schedule"][user_id]):
-        # Изменить запись в текущем расписании
-        data["schedule"][user_id][index] = {
-            "day": day,
-            "time": time,
-            "description": description,
-            "reminder_sent_1h": False,
-            "reminder_sent_24h": False
-        }
-        save_data(data)
-        await update.message.reply_text(f"Запись №{index + 1} для @{username} успешно изменена.")
+    index = int(index) - 1
+    if user_id in data["schedule"]:
+        if 0 <= index < len(data["schedule"][user_id]):
+            data["schedule"][user_id][index] = {
+                "day": day,
+                "time": time,
+                "description": description,
+                "reminder_sent_1h": False,
+                "reminder_sent_24h": False
+            }
+            save_data(data)
+            await update.message.reply_text(f"Запись №{index + 1} для @{username} успешно изменена.")
+        else:
+            await update.message.reply_text(f"Индекс {index + 1} вне диапазона записей.")
     else:
-        await update.message.reply_text(f"Запись с индексом {index + 1} для @{username} не найдена.")
+        await update.message.reply_text(f"У пользователя @{username} нет расписания.")
 
 # Основная функция
 def main():
     init_json_db()
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # Настройка напоминаний и сброса расписания
     scheduler = AsyncIOScheduler()
     scheduler.add_job(reset_to_standard_schedule, 'cron', day_of_week='sat', hour=23, minute=59)
     scheduler.add_job(send_reminders, 'interval', minutes=1, args=[application])
     scheduler.start()
 
-    # Регистрация команд
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("edit_schedule", edit_schedule))
 
@@ -187,3 +224,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
