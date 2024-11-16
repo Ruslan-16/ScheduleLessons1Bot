@@ -3,7 +3,7 @@ import json
 import logging
 from datetime import datetime, timedelta
 from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackContext, ChatMemberHandler
+from telegram.ext import Application, CommandHandler, CallbackContext
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # Настройка логирования
@@ -104,8 +104,17 @@ async def start(update: Update, context: CallbackContext):
             )
         )
 
+# Кнопка "Добавить расписание" (образец ввода)
+async def add_schedule_sample(update: Update, context: CallbackContext):
+    """Образец ввода для добавления расписания."""
+    await update.message.reply_text(
+        "Пример команды для добавления расписания:\n"
+        "/schedule @username Понедельник Математика 10:00 14:00 16:00"
+    )
+
 # Команда /schedule для добавления расписания
 async def schedule(update: Update, context: CallbackContext):
+    """Добавляет расписание для ученика."""
     if len(context.args) < 4:
         await update.message.reply_text(
             "Использование: /schedule @username день предмет время1 время2 ...\n"
@@ -142,6 +151,7 @@ async def schedule(update: Update, context: CallbackContext):
 
 # Команда /students для отображения всех учеников
 async def students(update: Update, context: CallbackContext):
+    """Отображает список всех учеников."""
     user = update.effective_user
     if user.id != ADMIN_ID:
         await update.message.reply_text("У вас нет прав для просмотра списка учеников.")
@@ -155,6 +165,7 @@ async def students(update: Update, context: CallbackContext):
 
 # Команда /my_schedule для просмотра расписания учеником
 async def my_schedule(update: Update, context: CallbackContext):
+    """Отображает расписание ученика."""
     user_id = str(update.effective_user.id)
     data = load_data()
 
@@ -168,6 +179,7 @@ async def my_schedule(update: Update, context: CallbackContext):
 
 # Основная функция
 def main():
+    """Запускает бота."""
     logging.info("Инициализация бота...")
     init_json_db()
 
@@ -180,6 +192,7 @@ def main():
     application.add_handler(CommandHandler("schedule", schedule))
     application.add_handler(CommandHandler("students", students))
     application.add_handler(CommandHandler("my_schedule", my_schedule))
+    application.add_handler(CommandHandler("add_schedule_sample", add_schedule_sample))
 
     logging.info("Бот запущен и готов к работе!")
     application.run_polling()
