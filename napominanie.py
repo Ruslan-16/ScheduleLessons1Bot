@@ -3,7 +3,7 @@ import json
 import logging
 from datetime import datetime, timedelta
 from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackContext, ChatMemberHandler, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, CallbackContext, ChatMemberHandler
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # Настройка логирования
@@ -25,6 +25,7 @@ JSON_DB_PATH = "users.json"  # Путь к JSON-файлу для хранени
 
 # Инициализация JSON-базы данных
 def init_json_db():
+    """Создаёт файл базы данных, если его нет, с корректной структурой."""
     if not os.path.exists(JSON_DB_PATH):
         logging.info("Создаю файл базы данных users.json...")
         with open(JSON_DB_PATH, 'w') as f:
@@ -32,11 +33,13 @@ def init_json_db():
 
 # Сохранение данных в JSON-файл
 def save_data(data):
+    """Сохраняет данные в файл базы."""
     with open(JSON_DB_PATH, 'w') as f:
         json.dump(data, f, indent=4)
 
 # Загрузка данных из JSON-файла
 def load_data():
+    """Загружает данные из базы и проверяет структуру."""
     if not os.path.exists(JSON_DB_PATH):
         init_json_db()
 
@@ -46,11 +49,25 @@ def load_data():
         except json.JSONDecodeError:
             logging.error("Ошибка чтения файла users.json. Восстанавливаю базу.")
             data = {"users": {}, "schedule": {}, "standard_schedule": {}}
+            save_data(data)
+
+    # Проверяем, что загруженные данные — словарь с нужными ключами
+    if not isinstance(data, dict):
+        logging.warning("Некорректная структура файла. Восстанавливаю базу.")
+        data = {"users": {}, "schedule": {}, "standard_schedule": {}}
+        save_data(data)
+
+    for key in ["users", "schedule", "standard_schedule"]:
+        if key not in data or not isinstance(data[key], dict):
+            logging.warning(f"Ключ {key} отсутствует или некорректен. Исправляю.")
+            data[key] = {}
+            save_data(data)
 
     return data
 
 # Добавление пользователя
 def add_user(user_id, username, first_name):
+    """Добавляет пользователя в базу."""
     data = load_data()
     data["users"][str(user_id)] = {
         "username": username,
@@ -58,68 +75,13 @@ def add_user(user_id, username, first_name):
     }
     save_data(data)
 
-# Установить стандартное расписание
-def set_standard_schedule(user_id, day, time, description):
-    data = load_data()
-    user_id = str(user_id)
-    if user_id not in data["standard_schedule"]:
-        data["standard_schedule"][user_id] = []
-    data["standard_schedule"][user_id].append({
-        "day": day,
-        "time": time,
-        "description": description
-    })
-    save_data(data)
-
-# Сброс расписания к стандартному
-def reset_to_standard_schedule():
-    data = load_data()
-    for user_id, standard_entries in data.get("standard_schedule", {}).items():
-        data["schedule"][user_id] = [
-            {
-                "day": entry["day"],
-                "time": entry["time"],
-                "description": entry["description"],
-                "reminder_sent_1h": False,
-                "reminder_sent_24h": False
-            }
-            for entry in standard_entries
-        ]
-    save_data(data)
-    logging.info("Все расписания были сброшены к стандартным.")
-
-# Напоминание о занятии
-async def send_reminders(context: CallbackContext):
-    data = load_data()
-    now = datetime.now()
-    for user_id, entries in data.get("schedule", {}).items():
-        for entry in entries:
-            day_time = f"{entry['day']} {entry['time']}"
-            try:
-                entry_time = datetime.strptime(day_time, "%A %H:%M")
-            except ValueError:
-                continue
-            # За 24 часа
-            if not entry.get("reminder_sent_24h") and now + timedelta(hours=24) >= entry_time:
-                await context.bot.send_message(
-                    chat_id=user_id,
-                    text=f"Напоминание: через 24 часа - {entry['description']} в {entry['time']}."
-                )
-                entry["reminder_sent_24h"] = True
-            # За 1 час
-            if not entry.get("reminder_sent_1h") and now + timedelta(hours=1) >= entry_time:
-                await context.bot.send_message(
-                    chat_id=user_id,
-                    text=f"Напоминание: через 1 час - {entry['description']} в {entry['time']}."
-                )
-                entry["reminder_sent_1h"] = True
-    save_data(data)
-
 # Команда /start
 async def start(update: Update, context: CallbackContext):
+    """Обрабатывает команду /start."""
     user = update.effective_user
     logging.info(f"Пользователь {user.first_name} ({user.username}) отправил /start.")
 
+    # Добавляем пользователя в базу данных
     add_user(user.id, user.username, user.first_name)
 
     if user.id == ADMIN_ID:
@@ -178,23 +140,6 @@ async def schedule(update: Update, context: CallbackContext):
     save_data(data)
     await update.message.reply_text(f"Расписание для @{username} успешно добавлено.")
 
-# Обработчик удаления пользователей
-async def handle_user_removal(update: Update, context: CallbackContext):
-    chat_member = update.chat_member
-    user_id = chat_member.from_user.id
-    status = chat_member.new_chat_member.status
-
-    if status in ["left", "kicked"]:
-        data = load_data()
-        if str(user_id) in data["users"]:
-            del data["users"][str(user_id)]
-        if str(user_id) in data["schedule"]:
-            del data["schedule"][str(user_id)]
-        if str(user_id) in data["standard_schedule"]:
-            del data["standard_schedule"][str(user_id)]
-        save_data(data)
-        logging.info(f"Пользователь {user_id} удалён из системы, так как покинул чат.")
-
 # Команда /students для отображения всех учеников
 async def students(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -229,17 +174,14 @@ def main():
     application = Application.builder().token(BOT_TOKEN).build()
 
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(reset_to_standard_schedule, 'cron', day_of_week='sat', hour=23, minute=59)
-    scheduler.add_job(send_reminders, 'interval', minutes=1, args=[application])
     scheduler.start()
 
-    # Регистрация команд
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("schedule", schedule))
     application.add_handler(CommandHandler("students", students))
     application.add_handler(CommandHandler("my_schedule", my_schedule))
-    application.add_handler(ChatMemberHandler(handle_user_removal, ChatMemberHandler.CHAT_MEMBER))
 
+    logging.info("Бот запущен и готов к работе!")
     application.run_polling()
 
 if __name__ == "__main__":
