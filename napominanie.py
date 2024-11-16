@@ -147,9 +147,12 @@ async def send_reminders(context: CallbackContext):
 # Команда /start
 async def start(update: Update, context: CallbackContext):
     user = update.effective_user
+
+    # Добавляем пользователя в базу данных
     add_user(user.id, user.username, user.first_name)
 
     if user.id == ADMIN_ID:
+        # Сообщение для администратора
         await update.message.reply_text(
             "Вы зарегистрированы как администратор! Доступные команды:",
             reply_markup=ReplyKeyboardMarkup(
@@ -162,6 +165,7 @@ async def start(update: Update, context: CallbackContext):
             )
         )
     else:
+        # Сообщение для ученика
         await update.message.reply_text(
             "Вы зарегистрированы! Вы будете получать напоминания о занятиях.",
             reply_markup=ReplyKeyboardMarkup(
@@ -223,6 +227,7 @@ def main():
     scheduler.add_job(send_reminders, 'interval', minutes=1, args=[application])
     scheduler.start()
 
+    # Регистрация команд
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("students", students))
     application.add_handler(CommandHandler("my_schedule", my_schedule))
