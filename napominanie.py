@@ -47,10 +47,6 @@ def load_data():
             logging.error("Ошибка чтения файла users.json. Восстанавливаю базу.")
             data = {"users": {}, "schedule": {}, "standard_schedule": {}}
 
-    # Проверяем, что загруженные данные — словарь
-    if not isinstance(data, dict):
-        data = {"users": {}, "schedule": {}, "standard_schedule": {}}
-
     return data
 
 # Добавление пользователя
@@ -60,6 +56,63 @@ def add_user(user_id, username, first_name):
         "username": username,
         "first_name": first_name
     }
+    save_data(data)
+
+# Установить стандартное расписание
+def set_standard_schedule(user_id, day, time, description):
+    data = load_data()
+    user_id = str(user_id)
+    if user_id not in data["standard_schedule"]:
+        data["standard_schedule"][user_id] = []
+    data["standard_schedule"][user_id].append({
+        "day": day,
+        "time": time,
+        "description": description
+    })
+    save_data(data)
+
+# Сброс расписания к стандартному
+def reset_to_standard_schedule():
+    data = load_data()
+    for user_id, standard_entries in data.get("standard_schedule", {}).items():
+        data["schedule"][user_id] = [
+            {
+                "day": entry["day"],
+                "time": entry["time"],
+                "description": entry["description"],
+                "reminder_sent_1h": False,
+                "reminder_sent_24h": False
+            }
+            for entry in standard_entries
+        ]
+    save_data(data)
+    logging.info("Все расписания были сброшены к стандартным.")
+
+# Напоминание о занятии
+async def send_reminders(context: CallbackContext):
+    data = load_data()
+    now = datetime.now()
+    for user_id, entries in data.get("schedule", {}).items():
+        for entry in entries:
+            day_time = f"{entry['day']} {entry['time']}"
+            try:
+                entry_time = datetime.strptime(day_time, "%A %H:%M")
+            except ValueError:
+                continue
+            # За 24 часа
+            if not entry.get("reminder_sent_24h") and now + timedelta(hours=24) >= entry_time:
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=f"Напоминание: через 24 часа - {entry['description']} в {entry['time']}."
+                )
+                entry["reminder_sent_24h"] = True
+            # За 1 час
+            if not entry.get("reminder_sent_1h") and now + timedelta(hours=1) >= entry_time:
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=f"Напоминание: через 1 час - {entry['description']} в {entry['time']}."
+                )
+                entry["reminder_sent_1h"] = True
     save_data(data)
 
 # Команда /start
@@ -92,28 +145,21 @@ async def start(update: Update, context: CallbackContext):
             )
         )
 
-# Команда для проверки работы
-async def echo(update: Update, context: CallbackContext):
-    await update.message.reply_text(f"Получено сообщение: {update.message.text}")
-
 # Основная функция
 def main():
     logging.info("Инициализация бота...")
     init_json_db()
 
-    # Проверяем токен перед запуском
-    if not BOT_TOKEN:
-        raise ValueError("Токен не установлен в переменной окружения!")
-
     application = Application.builder().token(BOT_TOKEN).build()
 
     # Планировщик задач
     scheduler = AsyncIOScheduler()
+    scheduler.add_job(reset_to_standard_schedule, 'cron', day_of_week='sat', hour=23, minute=59)
+    scheduler.add_job(send_reminders, 'interval', minutes=1, args=[application])
     scheduler.start()
 
     # Регистрация команд
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("echo", echo))
 
     # Запуск бота
     logging.info("Бот запущен и готов к работе!")
