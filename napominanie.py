@@ -3,7 +3,7 @@ import json
 import logging
 from datetime import datetime, timedelta
 from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackContext, ChatMemberHandler
+from telegram.ext import Application, CommandHandler, CallbackContext, ChatMemberHandler, MessageHandler, filters
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # Настройка логирования
@@ -120,11 +120,9 @@ async def start(update: Update, context: CallbackContext):
     user = update.effective_user
     logging.info(f"Пользователь {user.first_name} ({user.username}) отправил /start.")
 
-    # Добавляем пользователя в базу данных
     add_user(user.id, user.username, user.first_name)
 
     if user.id == ADMIN_ID:
-        # Сообщение для администратора
         await update.message.reply_text(
             "Вы зарегистрированы как администратор! Доступные команды:",
             reply_markup=ReplyKeyboardMarkup(
@@ -137,13 +135,91 @@ async def start(update: Update, context: CallbackContext):
             )
         )
     else:
-        # Сообщение для ученика
         await update.message.reply_text(
             "Вы зарегистрированы! Вы будете получать напоминания о занятиях.",
             reply_markup=ReplyKeyboardMarkup(
                 [["Мое расписание"]], resize_keyboard=True
             )
         )
+
+# Команда /schedule для добавления расписания
+async def schedule(update: Update, context: CallbackContext):
+    if len(context.args) < 4:
+        await update.message.reply_text(
+            "Использование: /schedule @username день предмет время1 время2 ...\n"
+            "Пример: /schedule @username Понедельник Математика 10:00 14:00"
+        )
+        return
+
+    username = context.args[0]
+    day = context.args[1]
+    description = context.args[2]
+    times = context.args[3:]
+
+    data = load_data()
+    user_id = next((uid for uid, info in data["users"].items() if info["username"] == username.lstrip('@')), None)
+
+    if not user_id:
+        await update.message.reply_text(f"Пользователь @{username} не найден.")
+        return
+
+    if user_id not in data["schedule"]:
+        data["schedule"][user_id] = []
+
+    for time in times:
+        data["schedule"][user_id].append({
+            "day": day,
+            "time": time,
+            "description": description,
+            "reminder_sent_1h": False,
+            "reminder_sent_24h": False
+        })
+
+    save_data(data)
+    await update.message.reply_text(f"Расписание для @{username} успешно добавлено.")
+
+# Обработчик удаления пользователей
+async def handle_user_removal(update: Update, context: CallbackContext):
+    chat_member = update.chat_member
+    user_id = chat_member.from_user.id
+    status = chat_member.new_chat_member.status
+
+    if status in ["left", "kicked"]:
+        data = load_data()
+        if str(user_id) in data["users"]:
+            del data["users"][str(user_id)]
+        if str(user_id) in data["schedule"]:
+            del data["schedule"][str(user_id)]
+        if str(user_id) in data["standard_schedule"]:
+            del data["standard_schedule"][str(user_id)]
+        save_data(data)
+        logging.info(f"Пользователь {user_id} удалён из системы, так как покинул чат.")
+
+# Команда /students для отображения всех учеников
+async def students(update: Update, context: CallbackContext):
+    user = update.effective_user
+    if user.id != ADMIN_ID:
+        await update.message.reply_text("У вас нет прав для просмотра списка учеников.")
+        return
+
+    data = load_data()
+    students_text = "Список учеников:\n"
+    for user_id, info in data["users"].items():
+        students_text += f"{info['first_name']} (@{info['username']})\n"
+    await update.message.reply_text(students_text)
+
+# Команда /my_schedule для просмотра расписания учеником
+async def my_schedule(update: Update, context: CallbackContext):
+    user_id = str(update.effective_user.id)
+    data = load_data()
+
+    if user_id in data["schedule"]:
+        schedule_text = "Ваше расписание:\n"
+        for entry in data["schedule"][user_id]:
+            schedule_text += f"{entry['day']} {entry['time']} - {entry['description']}\n"
+        await update.message.reply_text(schedule_text)
+    else:
+        await update.message.reply_text("Ваше расписание пусто.")
 
 # Основная функция
 def main():
@@ -152,7 +228,6 @@ def main():
 
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # Планировщик задач
     scheduler = AsyncIOScheduler()
     scheduler.add_job(reset_to_standard_schedule, 'cron', day_of_week='sat', hour=23, minute=59)
     scheduler.add_job(send_reminders, 'interval', minutes=1, args=[application])
@@ -160,9 +235,11 @@ def main():
 
     # Регистрация команд
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("schedule", schedule))
+    application.add_handler(CommandHandler("students", students))
+    application.add_handler(CommandHandler("my_schedule", my_schedule))
+    application.add_handler(ChatMemberHandler(handle_user_removal, ChatMemberHandler.CHAT_MEMBER))
 
-    # Запуск бота
-    logging.info("Бот запущен и готов к работе!")
     application.run_polling()
 
 if __name__ == "__main__":
