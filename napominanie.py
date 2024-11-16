@@ -86,7 +86,7 @@ async def start(update: Update, context: CallbackContext):
 
     if user.id == ADMIN_ID:
         await update.message.reply_text(
-            "Вы зарегистрированы как администратор! Доступные команды:",
+            "Вы зарегистрированы как администратор! Выберите команду:",
             reply_markup=ReplyKeyboardMarkup(
                 [
                     ["Добавить расписание", "Установить стандартное расписание"],
@@ -104,11 +104,13 @@ async def start(update: Update, context: CallbackContext):
             )
         )
 
-# Кнопка "Добавить расписание" (образец ввода)
+# Кнопка "Добавить расписание"
 async def add_schedule_sample(update: Update, context: CallbackContext):
     """Образец ввода для добавления расписания."""
     await update.message.reply_text(
-        "Пример команды для добавления расписания:\n"
+        "Для добавления расписания используйте команду в формате:\n"
+        "/schedule @username день предмет время1 время2 ...\n\n"
+        "Пример:\n"
         "/schedule @username Понедельник Математика 10:00 14:00 16:00"
     )
 
