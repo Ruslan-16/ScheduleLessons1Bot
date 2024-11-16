@@ -37,9 +37,14 @@ def load_data():
         try:
             data = json.load(f)
         except json.JSONDecodeError:
+            # Если файл повреждён, создаём стандартную структуру
             data = {"users": {}, "schedule": {}, "standard_schedule": {}}
 
-    # Проверяем, что структура данных корректна
+    # Проверяем, что загруженные данные — словарь
+    if not isinstance(data, dict):
+        data = {"users": {}, "schedule": {}, "standard_schedule": {}}
+
+    # Убедимся, что ключи существуют
     for key in ["users", "schedule", "standard_schedule"]:
         if key not in data:
             data[key] = {}
@@ -49,9 +54,6 @@ def load_data():
 # Добавление пользователя
 def add_user(user_id, username, first_name):
     data = load_data()
-    if "users" not in data:
-        data["users"] = {}
-
     data["users"][str(user_id)] = {
         "username": username,
         "first_name": first_name
@@ -224,4 +226,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
