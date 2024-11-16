@@ -1,226 +1,189 @@
 import os
-import re
-import sqlite3
+import json
 from datetime import datetime, timedelta
 from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackContext, ChatMemberHandler
+from telegram.ext import Application, CommandHandler, CallbackContext
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # Загружаем переменные окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
-DB_PATH = "schedule.db"  # Путь к базе данных SQLite
+JSON_DB_PATH = "users.json"  # Путь к JSON-файлу для хранения данных
 
+# Инициализация JSON-базы данных (создает файл, если его нет)
+def init_json_db():
+    if not os.path.exists(JSON_DB_PATH):
+        with open(JSON_DB_PATH, 'w') as f:
+            json.dump({"users": {}, "schedule": {}, "standard_schedule": {}}, f)
 
-# Инициализация базы данных
-def init_db():
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                user_id INTEGER PRIMARY KEY,
-                username TEXT,
-                first_name TEXT
-            )
-        ''')
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS schedule (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                day TEXT,
-                time TEXT,
-                description TEXT,
-                reminder_sent BOOLEAN DEFAULT 0,
-                FOREIGN KEY(user_id) REFERENCES users(user_id)
-            )
-        ''')
-        conn.commit()
+# Сохранение данных в JSON-файл
+def save_data(data):
+    with open(JSON_DB_PATH, 'w') as f:
+        json.dump(data, f, indent=4)
 
+# Загрузка данных из JSON-файла
+def load_data():
+    with open(JSON_DB_PATH, 'r') as f:
+        return json.load(f)
 
-# Создаем клавиатуру для администратора
-def get_admin_keyboard():
-    keyboard = [
-        ["/schedule", "/remove_schedule"],
-        ["/users", "/my_schedule"]
-    ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
+# Добавление пользователя
+def add_user(user_id, username, first_name):
+    data = load_data()
+    data["users"][str(user_id)] = {
+        "username": username,
+        "first_name": first_name
+    }
+    save_data(data)
 
+# Установить стандартное расписание
+def set_standard_schedule(user_id, day, time, description):
+    data = load_data()
+    user_id = str(user_id)
+    if user_id not in data["standard_schedule"]:
+        data["standard_schedule"][user_id] = []
+    data["standard_schedule"][user_id].append({
+        "day": day,
+        "time": time,
+        "description": description
+    })
+    save_data(data)
 
-# Создаем клавиатуру для учеников
-def get_student_keyboard():
-    keyboard = [["/my_schedule"]]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
+# Сброс расписания к стандартному
+def reset_to_standard_schedule():
+    data = load_data()
+    for user_id, standard_entries in data.get("standard_schedule", {}).items():
+        data["schedule"][user_id] = [
+            {
+                "day": entry["day"],
+                "time": entry["time"],
+                "description": entry["description"],
+                "reminder_sent_1h": False,
+                "reminder_sent_24h": False
+            }
+            for entry in standard_entries
+        ]
+    save_data(data)
 
+# Проверка валидности времени
+def is_valid_time(time_str):
+    try:
+        datetime.strptime(time_str, "%H:%M")
+        return True
+    except ValueError:
+        return False
 
-# Команда /start для регистрации пользователя
+# Напоминание о занятии
+async def send_reminders(context: CallbackContext):
+    data = load_data()
+    now = datetime.now()
+    for user_id, entries in data.get("schedule", {}).items():
+        for entry in entries:
+            day_time = f"{entry['day']} {entry['time']}"
+            try:
+                entry_time = datetime.strptime(day_time, "%A %H:%M")
+            except ValueError:
+                continue
+            # За 24 часа
+            if not entry["reminder_sent_24h"] and now + timedelta(hours=24) >= entry_time:
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=f"Напоминание: через 24 часа - {entry['description']} в {entry['time']}."
+                )
+                entry["reminder_sent_24h"] = True
+            # За 1 час
+            if not entry["reminder_sent_1h"] and now + timedelta(hours=1) >= entry_time:
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=f"Напоминание: через 1 час - {entry['description']} в {entry['time']}."
+                )
+                entry["reminder_sent_1h"] = True
+    save_data(data)
+
+# Команда /start
 async def start(update: Update, context: CallbackContext):
     user = update.effective_user
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute('INSERT OR IGNORE INTO users (user_id, username, first_name) VALUES (?, ?, ?)',
-                       (user.id, user.username, user.first_name))
-        conn.commit()
+    add_user(user.id, user.username, user.first_name)
 
-    # Устанавливаем разную клавиатуру для администратора и ученика
     if user.id == ADMIN_ID:
         await update.message.reply_text(
             "Вы зарегистрированы как администратор! Доступные команды:",
-            reply_markup=get_admin_keyboard()
+            reply_markup=ReplyKeyboardMarkup(
+                [
+                    ["Добавить расписание", "Установить стандартное расписание"],
+                    ["Удалить расписание", "Редактировать расписание"],
+                    ["Сбросить к стандартному"]
+                ],
+                resize_keyboard=True
+            )
         )
     else:
         await update.message.reply_text(
-            "Вы зарегистрированы! Доступна команда /my_schedule для просмотра вашего расписания.",
-            reply_markup=get_student_keyboard()
+            "Вы зарегистрированы! Вы будете получать напоминания о занятиях.",
+            reply_markup=ReplyKeyboardMarkup(
+                [["Мое расписание"]], resize_keyboard=True
+            )
         )
 
-
-# Команда /schedule для добавления расписания (только администратор)
-async def schedule(update: Update, context: CallbackContext):
+# Команда /edit_schedule
+async def edit_schedule(update: Update, context: CallbackContext):
     user = update.effective_user
     if user.id != ADMIN_ID:
-        await update.message.reply_text("У вас нет прав для изменения расписания.")
+        await update.message.reply_text("У вас нет прав для редактирования расписания.")
         return
 
-    if len(context.args) < 2:
+    if len(context.args) < 5:
         await update.message.reply_text(
-            "Использование: /schedule @username1 день1 время1 описание1; @username2 день2 время2 описание2; ..."
+            "Использование: /edit_schedule @username индекс_занятия день время описание\n"
+            "Пример: /edit_schedule @ivan123 1 Понедельник 18:00 Новый предмет"
         )
         return
 
-    schedule_text = " ".join(context.args)
-    entries = schedule_text.split(";")
-    added_entries = []
+    username, index, day, time, *description = context.args
+    description = " ".join(description)
 
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
+    if not is_valid_time(time):
+        await update.message.reply_text("Ошибка: время должно быть в формате ЧЧ:ММ (например, 15:30).")
+        return
 
-        for entry in entries:
-            match = re.match(r"@(\S+)\s+(\S+)\s+(\S+)\s+(.+)", entry.strip())
-            if match:
-                username, day, time, description = match.groups()
-                cursor.execute('SELECT user_id FROM users WHERE username = ?', (username,))
-                result = cursor.fetchone()
+    # Найти user_id по username
+    data = load_data()
+    user_id = next((uid for uid, info in data["users"].items() if info["username"] == username.lstrip('@')), None)
 
-                if result:
-                    user_id = result[0]
-                    cursor.execute('''
-                        INSERT INTO schedule (user_id, day, time, description, reminder_sent)
-                        VALUES (?, ?, ?, ?, 0)
-                    ''', (user_id, day, time, description))
-                    added_entries.append(f"@{username} {day} {time} - {description}")
-                else:
-                    await update.message.reply_text(f"Пользователь @{username} не найден.")
+    if not user_id:
+        await update.message.reply_text(f"Пользователь @{username} не найден.")
+        return
 
-        conn.commit()
-
-    if added_entries:
-        confirmation = "Занятия добавлены в расписание:\n" + "\n".join(added_entries)
-        await update.message.reply_text(confirmation)
+    index = int(index) - 1  # Привести индекс к корректному виду
+    if user_id in data["schedule"] and 0 <= index < len(data["schedule"][user_id]):
+        # Изменить запись в текущем расписании
+        data["schedule"][user_id][index] = {
+            "day": day,
+            "time": time,
+            "description": description,
+            "reminder_sent_1h": False,
+            "reminder_sent_24h": False
+        }
+        save_data(data)
+        await update.message.reply_text(f"Запись №{index + 1} для @{username} успешно изменена.")
     else:
-        await update.message.reply_text(
-            "Ошибка в формате команды или указаны неверные username'ы. Пожалуйста, проверьте правильность ввода."
-        )
+        await update.message.reply_text(f"Запись с индексом {index + 1} для @{username} не найдена.")
 
-
-# Команда /my_schedule для просмотра расписания
-async def my_schedule(update: Update, context: CallbackContext):
-    user = update.effective_user
-    text = "Ваше расписание:\n\n"
-
-    # Проверка, если администратор - показать расписание всех учеников
-    if user.id == ADMIN_ID:
-        with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT users.first_name, schedule.day, schedule.time, schedule.description 
-                FROM schedule 
-                JOIN users ON schedule.user_id = users.user_id 
-                ORDER BY schedule.day, schedule.time
-            ''')
-            schedule = cursor.fetchall()
-
-        if not schedule:
-            text = "Общее расписание пусто."
-        else:
-            for first_name, day, time, description in schedule:
-                text += f"{first_name}: {day} {time} - {description}\n"
-    else:
-        # Для учеников показать только их расписание
-        with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT day, time, description FROM schedule WHERE user_id = ?', (user.id,))
-            schedule = cursor.fetchall()
-
-        if not schedule:
-            text = "Ваше расписание пусто."
-        else:
-            for day, time, description in schedule:
-                text += f"{day} {time} - {description}\n"
-
-    await update.message.reply_text(text)
-
-
-# Команда /users для отображения списка пользователей (только администратор)
-async def list_users(update: Update, context: CallbackContext):
-    if update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text("У вас нет прав для просмотра списка пользователей.")
-        return
-
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT username, first_name FROM users')
-        users = cursor.fetchall()
-
-    if not users:
-        await update.message.reply_text("Нет зарегистрированных пользователей.")
-        return
-
-    text = "Зарегистрированные пользователи:\n"
-    for username, first_name in users:
-        text += f"{first_name} (@{username})\n"
-    await update.message.reply_text(text)
-
-
-# Команда /remove_schedule для удаления расписания (только администратор)
-async def remove_schedule(update: Update, context: CallbackContext):
-    if update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text("У вас нет прав для удаления расписания.")
-        return
-
-    if len(context.args) < 1:
-        await update.message.reply_text("Использование: /remove_schedule @username")
-        return
-
-    username = context.args[0].lstrip('@')
-
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT user_id FROM users WHERE username = ?', (username,))
-        result = cursor.fetchone()
-
-        if result:
-            user_id = result[0]
-            cursor.execute('DELETE FROM schedule WHERE user_id = ?', (user_id,))
-            conn.commit()
-            await update.message.reply_text(f"Все занятия для @{username} были удалены из расписания.")
-        else:
-            await update.message.reply_text(f"Пользователь @{username} не найден.")
-
-
-# Основная функция для запуска бота
+# Основная функция
 def main():
-    init_db()
+    init_json_db()
     application = Application.builder().token(BOT_TOKEN).build()
+
+    # Настройка напоминаний и сброса расписания
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(reset_to_standard_schedule, 'cron', day_of_week='sat', hour=23, minute=59)
+    scheduler.add_job(send_reminders, 'interval', minutes=1, args=[application])
+    scheduler.start()
 
     # Регистрация команд
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("schedule", schedule))
-    application.add_handler(CommandHandler("my_schedule", my_schedule))
-    application.add_handler(CommandHandler("users", list_users))
-    application.add_handler(CommandHandler("remove_schedule", remove_schedule))
+    application.add_handler(CommandHandler("edit_schedule", edit_schedule))
 
-    # Запуск бота в режиме Polling
     application.run_polling()
-
 
 if __name__ == "__main__":
     main()
