@@ -1,9 +1,13 @@
 import os
 import json
+import logging
 from datetime import datetime, timedelta
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackContext
+from telegram import Update, ReplyKeyboardMarkup, ChatMember
+from telegram.ext import Application, CommandHandler, CallbackContext, ChatMemberHandler
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+# Настройка логирования
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # Загружаем переменные окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -37,7 +41,7 @@ def load_data():
         try:
             data = json.load(f)
         except json.JSONDecodeError:
-            # Если файл повреждён, создаём стандартную структуру
+            logging.error("Ошибка чтения файла users.json. Восстанавливаю базу.")
             data = {"users": {}, "schedule": {}, "standard_schedule": {}}
 
     # Проверяем, что загруженные данные — словарь
@@ -88,6 +92,7 @@ def reset_to_standard_schedule():
             for entry in standard_entries
         ]
     save_data(data)
+    logging.info("Все расписания были сброшены к стандартным.")
 
 # Проверка валидности времени
 def is_valid_time(time_str):
@@ -118,7 +123,7 @@ async def send_reminders(context: CallbackContext):
         for entry in entries:
             day_time = f"{translate_day_to_english(entry['day'])} {entry['time']}"
             if "Invalid" in day_time:
-                continue  # Пропускаем некорректные записи
+                continue
             try:
                 entry_time = datetime.strptime(day_time, "%A %H:%M")
             except ValueError:
@@ -164,26 +169,24 @@ async def start(update: Update, context: CallbackContext):
             )
         )
 
-# Команда /edit_schedule
-async def edit_schedule(update: Update, context: CallbackContext):
+# Команда /schedule для добавления расписания
+async def schedule(update: Update, context: CallbackContext):
     user = update.effective_user
     if user.id != ADMIN_ID:
-        await update.message.reply_text("У вас нет прав для редактирования расписания.")
+        await update.message.reply_text("У вас нет прав для изменения расписания.")
         return
 
-    if len(context.args) < 5:
+    if len(context.args) < 4:
         await update.message.reply_text(
-            "Использование: /edit_schedule @username индекс_занятия день время описание\n"
-            "Пример: /edit_schedule @ivan123 1 Понедельник 18:00 Новый предмет"
+            "Использование: /schedule @username день предмет время1 [время2 ... времяN]\n"
+            "Пример: /schedule @RuslanAlmasovich Понедельник Математика 10:00 14:00 16:30"
         )
         return
 
-    username, index, day, time, *description = context.args
-    description = " ".join(description)
-
-    if not is_valid_time(time):
-        await update.message.reply_text("Ошибка: время должно быть в формате ЧЧ:ММ (например, 15:30).")
-        return
+    username = context.args[0]
+    day = context.args[1]
+    description = context.args[2]
+    times = context.args[3:]  # Все оставшиеся аргументы — это временные метки
 
     data = load_data()
     user_id = next((uid for uid, info in data["users"].items() if info["username"] == username.lstrip('@')), None)
@@ -192,22 +195,42 @@ async def edit_schedule(update: Update, context: CallbackContext):
         await update.message.reply_text(f"Пользователь @{username} не найден.")
         return
 
-    index = int(index) - 1
-    if user_id in data["schedule"]:
-        if 0 <= index < len(data["schedule"][user_id]):
-            data["schedule"][user_id][index] = {
-                "day": day,
-                "time": time,
-                "description": description,
-                "reminder_sent_1h": False,
-                "reminder_sent_24h": False
-            }
-            save_data(data)
-            await update.message.reply_text(f"Запись №{index + 1} для @{username} успешно изменена.")
-        else:
-            await update.message.reply_text(f"Индекс {index + 1} вне диапазона записей.")
-    else:
-        await update.message.reply_text(f"У пользователя @{username} нет расписания.")
+    if user_id not in data["schedule"]:
+        data["schedule"][user_id] = []
+
+    for time in times:
+        if not is_valid_time(time):
+            await update.message.reply_text(f"Ошибка: время '{time}' должно быть в формате ЧЧ:ММ.")
+            continue
+
+        # Добавляем запись в расписание
+        data["schedule"][user_id].append({
+            "day": day,
+            "time": time,
+            "description": description,
+            "reminder_sent_1h": False,
+            "reminder_sent_24h": False
+        })
+
+    save_data(data)
+    await update.message.reply_text(f"Занятия по предмету '{description}' для @{username} успешно добавлены.")
+
+# Обработчик удаления пользователей
+async def handle_user_removal(update: Update, context: CallbackContext):
+    chat_member = update.chat_member
+    user_id = chat_member.from_user.id
+    status = chat_member.new_chat_member.status
+
+    if status in [ChatMember.LEFT, ChatMember.KICKED]:
+        data = load_data()
+        if str(user_id) in data["users"]:
+            del data["users"][str(user_id)]
+        if str(user_id) in data["schedule"]:
+            del data["schedule"][str(user_id)]
+        if str(user_id) in data["standard_schedule"]:
+            del data["standard_schedule"][str(user_id)]
+        save_data(data)
+        logging.info(f"Пользователь {user_id} удалён из системы, так как покинул чат.")
 
 # Основная функция
 def main():
@@ -220,7 +243,8 @@ def main():
     scheduler.start()
 
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("edit_schedule", edit_schedule))
+    application.add_handler(CommandHandler("schedule", schedule))
+    application.add_handler(ChatMemberHandler(handle_user_removal, ChatMemberHandler.CHAT_MEMBER))
 
     application.run_polling()
 
