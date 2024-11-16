@@ -2,8 +2,8 @@ import os
 import json
 import logging
 from datetime import datetime, timedelta
-from telegram import Update, ReplyKeyboardMarkup, ChatMember
-from telegram.ext import Application, CommandHandler, CallbackContext, ChatMemberHandler
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackContext, ChatMemberHandler, MessageHandler, filters
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # Настройка логирования
@@ -155,7 +155,7 @@ async def start(update: Update, context: CallbackContext):
             reply_markup=ReplyKeyboardMarkup(
                 [
                     ["Добавить расписание", "Установить стандартное расписание"],
-                    ["Удалить расписание", "Редактировать расписание"],
+                    ["Ученики", "Редактировать расписание"],
                     ["Сбросить к стандартному"]
                 ],
                 resize_keyboard=True
@@ -169,51 +169,31 @@ async def start(update: Update, context: CallbackContext):
             )
         )
 
-# Команда /schedule для добавления расписания
-async def schedule(update: Update, context: CallbackContext):
+# Команда /students для отображения всех учеников
+async def students(update: Update, context: CallbackContext):
     user = update.effective_user
     if user.id != ADMIN_ID:
-        await update.message.reply_text("У вас нет прав для изменения расписания.")
+        await update.message.reply_text("У вас нет прав для просмотра списка учеников.")
         return
-
-    if len(context.args) < 4:
-        await update.message.reply_text(
-            "Использование: /schedule @username день предмет время1 [время2 ... времяN]\n"
-            "Пример: /schedule @RuslanAlmasovich Понедельник Математика 10:00 14:00 16:30"
-        )
-        return
-
-    username = context.args[0]
-    day = context.args[1]
-    description = context.args[2]
-    times = context.args[3:]  # Все оставшиеся аргументы — это временные метки
 
     data = load_data()
-    user_id = next((uid for uid, info in data["users"].items() if info["username"] == username.lstrip('@')), None)
+    students_text = "Список учеников:\n"
+    for user_id, info in data["users"].items():
+        students_text += f"{info['first_name']} (@{info['username']})\n"
+    await update.message.reply_text(students_text)
 
-    if not user_id:
-        await update.message.reply_text(f"Пользователь @{username} не найден.")
-        return
+# Команда /my_schedule для просмотра расписания учеником
+async def my_schedule(update: Update, context: CallbackContext):
+    user_id = str(update.effective_user.id)
+    data = load_data()
 
-    if user_id not in data["schedule"]:
-        data["schedule"][user_id] = []
-
-    for time in times:
-        if not is_valid_time(time):
-            await update.message.reply_text(f"Ошибка: время '{time}' должно быть в формате ЧЧ:ММ.")
-            continue
-
-        # Добавляем запись в расписание
-        data["schedule"][user_id].append({
-            "day": day,
-            "time": time,
-            "description": description,
-            "reminder_sent_1h": False,
-            "reminder_sent_24h": False
-        })
-
-    save_data(data)
-    await update.message.reply_text(f"Занятия по предмету '{description}' для @{username} успешно добавлены.")
+    if user_id in data["schedule"]:
+        schedule_text = "Ваше расписание:\n"
+        for entry in data["schedule"][user_id]:
+            schedule_text += f"{entry['day']} {entry['time']} - {entry['description']}\n"
+        await update.message.reply_text(schedule_text)
+    else:
+        await update.message.reply_text("Ваше расписание пусто.")
 
 # Обработчик удаления пользователей
 async def handle_user_removal(update: Update, context: CallbackContext):
@@ -221,7 +201,8 @@ async def handle_user_removal(update: Update, context: CallbackContext):
     user_id = chat_member.from_user.id
     status = chat_member.new_chat_member.status
 
-    if status in [ChatMember.LEFT, ChatMember.KICKED]:
+    # Используем строки для проверки статуса
+    if status in ["left", "kicked"]:
         data = load_data()
         if str(user_id) in data["users"]:
             del data["users"][str(user_id)]
@@ -243,7 +224,8 @@ def main():
     scheduler.start()
 
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("schedule", schedule))
+    application.add_handler(CommandHandler("students", students))
+    application.add_handler(CommandHandler("my_schedule", my_schedule))
     application.add_handler(ChatMemberHandler(handle_user_removal, ChatMemberHandler.CHAT_MEMBER))
 
     application.run_polling()
