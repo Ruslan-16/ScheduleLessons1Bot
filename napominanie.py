@@ -1,7 +1,7 @@
 import os
 import json
 import logging
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
+from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -22,6 +22,7 @@ if not ADMIN_ID:
 ADMIN_ID = int(ADMIN_ID)
 JSON_DB_PATH = "users.json"  # Путь к JSON-файлу для хранения данных
 
+
 # Инициализация JSON-базы данных
 def init_json_db():
     """Создаёт файл базы данных, если его нет, с корректной структурой."""
@@ -29,12 +30,17 @@ def init_json_db():
         logging.info("Создаю файл базы данных users.json...")
         with open(JSON_DB_PATH, 'w') as f:
             json.dump({"users": {}, "schedule": {}, "standard_schedule": {}}, f)
+    else:
+        # Проверяем, что файл корректен
+        load_data()
+
 
 # Сохранение данных в JSON-файл
 def save_data(data):
     """Сохраняет данные в файл базы."""
     with open(JSON_DB_PATH, 'w') as f:
         json.dump(data, f, indent=4)
+
 
 # Загрузка данных из JSON-файла
 def load_data():
@@ -49,14 +55,24 @@ def load_data():
             logging.error("Ошибка чтения файла users.json. Восстанавливаю базу.")
             data = {"users": {}, "schedule": {}, "standard_schedule": {}}
             save_data(data)
+            return data
 
+    # Проверка структуры данных
+    if not isinstance(data, dict):
+        logging.warning("Некорректная структура файла. Восстанавливаю базу.")
+        data = {"users": {}, "schedule": {}, "standard_schedule": {}}
+        save_data(data)
+        return data
+
+    # Проверка ключей в структуре данных
     for key in ["users", "schedule", "standard_schedule"]:
         if key not in data or not isinstance(data[key], dict):
             logging.warning(f"Ключ {key} отсутствует или некорректен. Исправляю.")
             data[key] = {}
-            save_data(data)
 
+    save_data(data)  # Обновляем файл, если были исправления
     return data
+
 
 # Добавление пользователя
 def add_user(user_id, username, first_name):
@@ -67,6 +83,7 @@ def add_user(user_id, username, first_name):
         "first_name": first_name
     }
     save_data(data)
+
 
 # Команда /start
 async def start(update: Update, context: CallbackContext):
@@ -96,6 +113,7 @@ async def start(update: Update, context: CallbackContext):
             reply_markup=ReplyKeyboardMarkup(user_keyboard, resize_keyboard=True)
         )
 
+
 # Обработка кнопок администратора
 async def handle_admin_button(update: Update, context: CallbackContext):
     """Обрабатывает нажатие кнопок администратора."""
@@ -119,6 +137,7 @@ async def handle_admin_button(update: Update, context: CallbackContext):
         await update.message.reply_text("Эта функция пока в разработке.")
     elif text == "Сбросить к стандартному":
         await update.message.reply_text("Эта функция пока в разработке.")
+
 
 # Команда /schedule для добавления расписания
 async def schedule(update: Update, context: CallbackContext):
@@ -156,6 +175,7 @@ async def schedule(update: Update, context: CallbackContext):
     save_data(data)
     await update.message.reply_text(f"Расписание для @{username} успешно добавлено.")
 
+
 # Команда /students для отображения всех учеников
 async def students(update: Update, context: CallbackContext):
     """Отображает список всех учеников."""
@@ -168,6 +188,7 @@ async def students(update: Update, context: CallbackContext):
     for user_id, info in data["users"].items():
         students_text += f"{info['first_name']} (@{info['username']})\n"
     await update.message.reply_text(students_text)
+
 
 # Команда /my_schedule для просмотра расписания учеником
 async def my_schedule(update: Update, context: CallbackContext):
@@ -182,6 +203,7 @@ async def my_schedule(update: Update, context: CallbackContext):
         await update.message.reply_text(schedule_text)
     else:
         await update.message.reply_text("Ваше расписание пусто.")
+
 
 # Основная функция
 def main():
@@ -201,6 +223,7 @@ def main():
 
     logging.info("Бот запущен и готов к работе!")
     application.run_polling()
+
 
 if __name__ == "__main__":
     main()
