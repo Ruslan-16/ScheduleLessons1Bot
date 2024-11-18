@@ -1,9 +1,8 @@
 import os
 import json
 import logging
-from datetime import datetime, timedelta
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackContext
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # Настройка логирования
@@ -51,12 +50,6 @@ def load_data():
             data = {"users": {}, "schedule": {}, "standard_schedule": {}}
             save_data(data)
 
-    # Проверяем, что загруженные данные — словарь с нужными ключами
-    if not isinstance(data, dict):
-        logging.warning("Некорректная структура файла. Восстанавливаю базу.")
-        data = {"users": {}, "schedule": {}, "standard_schedule": {}}
-        save_data(data)
-
     for key in ["users", "schedule", "standard_schedule"]:
         if key not in data or not isinstance(data[key], dict):
             logging.warning(f"Ключ {key} отсутствует или некорректен. Исправляю.")
@@ -85,34 +78,47 @@ async def start(update: Update, context: CallbackContext):
     add_user(user.id, user.username, user.first_name)
 
     if user.id == ADMIN_ID:
+        # Клавиатура для администратора
+        admin_keyboard = [
+            ["Добавить расписание"],
+            ["Ученики", "Редактировать расписание"],
+            ["Сбросить к стандартному"]
+        ]
         await update.message.reply_text(
             "Вы зарегистрированы как администратор! Выберите команду:",
-            reply_markup=ReplyKeyboardMarkup(
-                [
-                    ["Добавить расписание", "Установить стандартное расписание"],
-                    ["Ученики", "Редактировать расписание"],
-                    ["Сбросить к стандартному"]
-                ],
-                resize_keyboard=True
-            )
+            reply_markup=ReplyKeyboardMarkup(admin_keyboard, resize_keyboard=True)
         )
     else:
+        # Клавиатура для ученика
+        user_keyboard = [["Мое расписание"]]
         await update.message.reply_text(
             "Вы зарегистрированы! Вы будете получать напоминания о занятиях.",
-            reply_markup=ReplyKeyboardMarkup(
-                [["Мое расписание"]], resize_keyboard=True
-            )
+            reply_markup=ReplyKeyboardMarkup(user_keyboard, resize_keyboard=True)
         )
 
-# Кнопка "Добавить расписание"
-async def add_schedule_sample(update: Update, context: CallbackContext):
-    """Образец ввода для добавления расписания."""
-    await update.message.reply_text(
-        "Для добавления расписания используйте команду в формате:\n"
-        "/schedule @username день предмет время1 время2 ...\n\n"
-        "Пример:\n"
-        "/schedule @username Понедельник Математика 10:00 14:00 16:00"
-    )
+# Обработка кнопок администратора
+async def handle_admin_button(update: Update, context: CallbackContext):
+    """Обрабатывает нажатие кнопок администратора."""
+    user = update.effective_user
+    if user.id != ADMIN_ID:
+        await update.message.reply_text("У вас нет прав для использования этой функции.")
+        return
+
+    text = update.message.text
+
+    if text == "Добавить расписание":
+        await update.message.reply_text(
+            "Для добавления расписания используйте команду в формате:\n"
+            "/schedule @username день предмет время1 время2 ...\n\n"
+            "Пример:\n"
+            "/schedule @username Понедельник Математика 10:00 14:00 16:00"
+        )
+    elif text == "Ученики":
+        await students(update, context)
+    elif text == "Редактировать расписание":
+        await update.message.reply_text("Эта функция пока в разработке.")
+    elif text == "Сбросить к стандартному":
+        await update.message.reply_text("Эта функция пока в разработке.")
 
 # Команда /schedule для добавления расписания
 async def schedule(update: Update, context: CallbackContext):
@@ -136,8 +142,7 @@ async def schedule(update: Update, context: CallbackContext):
         await update.message.reply_text(f"Пользователь @{username} не найден.")
         return
 
-    if user_id not in data["schedule"]:
-        data["schedule"][user_id] = []
+    data["schedule"].setdefault(user_id, [])
 
     for time in times:
         data["schedule"][user_id].append({
@@ -154,11 +159,6 @@ async def schedule(update: Update, context: CallbackContext):
 # Команда /students для отображения всех учеников
 async def students(update: Update, context: CallbackContext):
     """Отображает список всех учеников."""
-    user = update.effective_user
-    if user.id != ADMIN_ID:
-        await update.message.reply_text("У вас нет прав для просмотра списка учеников.")
-        return
-
     data = load_data()
     if not data["users"]:
         await update.message.reply_text("Список учеников пуст.")
@@ -196,9 +196,8 @@ def main():
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("schedule", schedule))
-    application.add_handler(CommandHandler("students", students))
     application.add_handler(CommandHandler("my_schedule", my_schedule))
-    application.add_handler(CommandHandler("add_schedule_sample", add_schedule_sample))
+    application.add_handler(MessageHandler(filters.TEXT & filters.User(ADMIN_ID), handle_admin_button))
 
     logging.info("Бот запущен и готов к работе!")
     application.run_polling()
