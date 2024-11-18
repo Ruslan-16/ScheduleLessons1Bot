@@ -1,9 +1,10 @@
 import os
 import json
 import logging
-from telegram import Update, ReplyKeyboardMarkup
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -85,6 +86,18 @@ def add_user(user_id, username, first_name):
     save_data(data)
 
 
+# Сброс расписания на стандартное
+def reset_to_standard_schedule():
+    """Сбрасывает расписание на стандартное."""
+    data = load_data()
+    if "standard_schedule" in data:
+        data["schedule"] = data["standard_schedule"].copy()
+        save_data(data)
+        logging.info("Расписание успешно сброшено на стандартное.")
+    else:
+        logging.warning("Стандартное расписание не задано.")
+
+
 # Команда /start
 async def start(update: Update, context: CallbackContext):
     """Обрабатывает команду /start."""
@@ -112,6 +125,17 @@ async def start(update: Update, context: CallbackContext):
             "Вы зарегистрированы! Вы будете получать напоминания о занятиях.",
             reply_markup=ReplyKeyboardMarkup(user_keyboard, resize_keyboard=True)
         )
+async def students(update: Update, context: CallbackContext):
+    """Отображает список всех учеников."""
+    data = load_data()
+    if not data["users"]:
+        await update.message.reply_text("Список учеников пуст.")
+        return
+
+    students_text = "Список учеников:\n"
+    for user_id, info in data["users"].items():
+        students_text += f"{info['first_name']} (@{info['username']})\n"
+    await update.message.reply_text(students_text)
 
 
 # Обработка кнопок администратора
@@ -134,75 +158,86 @@ async def handle_admin_button(update: Update, context: CallbackContext):
     elif text == "Ученики":
         await students(update, context)
     elif text == "Редактировать расписание":
-        await update.message.reply_text("Эта функция пока в разработке.")
+        await edit_schedule(update, context)
     elif text == "Сбросить к стандартному":
-        await update.message.reply_text("Эта функция пока в разработке.")
+        reset_to_standard_schedule()
+        await update.message.reply_text("Расписание сброшено к стандартному.")
 
 
-# Команда /schedule для добавления расписания
-async def schedule(update: Update, context: CallbackContext):
-    """Добавляет расписание для ученика."""
-    if len(context.args) < 4:
-        await update.message.reply_text(
-            "Использование: /schedule @username день предмет время1 время2 ...\n"
-            "Пример: /schedule @username Понедельник Математика 10:00 14:00"
-        )
-        return
-
-    username = context.args[0]
-    day = context.args[1]
-    description = context.args[2]
-    times = context.args[3:]
-
+# Команда для редактирования расписания
+async def edit_schedule(update: Update, context: CallbackContext):
+    """Начало редактирования расписания."""
     data = load_data()
-    user_id = next((uid for uid, info in data["users"].items() if info["username"] == username.lstrip('@')), None)
+    users = data["users"]
 
-    if not user_id:
-        await update.message.reply_text(f"Пользователь @{username} не найден.")
+    if not users:
+        await update.message.reply_text("Список пользователей пуст. Сначала зарегистрируйте пользователей.")
         return
 
-    data["schedule"].setdefault(user_id, [])
+    # Формируем список пользователей для выбора
+    keyboard = [[f"@{info['username']}"] for info in users.values()]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-    for time in times:
-        data["schedule"][user_id].append({
-            "day": day,
-            "time": time,
-            "description": description,
-            "reminder_sent_1h": False,
-            "reminder_sent_24h": False
-        })
-
-    save_data(data)
-    await update.message.reply_text(f"Расписание для @{username} успешно добавлено.")
+    await update.message.reply_text(
+        "Выберите ученика, чьё расписание вы хотите редактировать:",
+        reply_markup=reply_markup
+    )
+    context.user_data["edit_mode"] = True
 
 
 # Команда /students для отображения всех учеников
-async def students(update: Update, context: CallbackContext):
-    """Отображает список всех учеников."""
-    data = load_data()
-    if not data["users"]:
-        await update.message.reply_text("Список учеников пуст.")
+async def schedule(update: Update, context: CallbackContext):
+    """Добавляет расписание для нескольких учеников и дней."""
+    if not context.args:
+        await update.message.reply_text(
+            "Использование: /schedule\n"
+            "@username день предмет время1 время2 ...\n"
+            "@username день предмет время1 время2 ...\n\n"
+            "Пример:\n"
+            "/schedule\n"
+            "@ivan123 Понедельник Математика 10:00 14:00\n"
+            "@maria456 Вторник Физика 12:00"
+        )
         return
 
-    students_text = "Список учеников:\n"
-    for user_id, info in data["users"].items():
-        students_text += f"{info['first_name']} (@{info['username']})\n"
-    await update.message.reply_text(students_text)
-
-
-# Команда /my_schedule для просмотра расписания учеником
-async def my_schedule(update: Update, context: CallbackContext):
-    """Отображает расписание ученика."""
-    user_id = str(update.effective_user.id)
+    # Соединяем аргументы в текст и разбиваем по строкам
+    lines = " ".join(context.args).split("\n")
     data = load_data()
 
-    if user_id in data["schedule"]:
-        schedule_text = "Ваше расписание:\n"
-        for entry in data["schedule"][user_id]:
-            schedule_text += f"{entry['day']} {entry['time']} - {entry['description']}\n"
-        await update.message.reply_text(schedule_text)
-    else:
-        await update.message.reply_text("Ваше расписание пусто.")
+    messages = []
+    for line in lines:
+        parts = line.strip().split()
+        if len(parts) < 4:
+            messages.append(f"Ошибка: недостаточно данных в строке: {line}")
+            continue
+
+        username = parts[0]
+        day = parts[1]
+        subject = parts[2]
+        times = parts[3:]
+
+        # Проверяем наличие пользователя в базе
+        user_id = next((uid for uid, info in data["users"].items() if info["username"] == username.lstrip('@')), None)
+        if not user_id:
+            messages.append(f"Ошибка: пользователь {username} не найден.")
+            continue
+
+        # Добавляем расписание
+        data["schedule"].setdefault(user_id, [])
+        for time in times:
+            data["schedule"][user_id].append({
+                "day": day,
+                "time": time,
+                "description": subject,
+                "reminder_sent_1h": False,
+                "reminder_sent_24h": False
+            })
+
+        messages.append(f"Добавлено: {username} - {day} - {subject} в {', '.join(times)}")
+
+    # Сохраняем данные и отправляем итоговые сообщения
+    save_data(data)
+    await update.message.reply_text("\n".join(messages))
 
 
 # Основная функция
@@ -214,11 +249,11 @@ def main():
     application = Application.builder().token(BOT_TOKEN).build()
 
     scheduler = AsyncIOScheduler()
+    scheduler.add_job(reset_to_standard_schedule, CronTrigger(day_of_week="sat", hour=23, minute=59))
     scheduler.start()
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("schedule", schedule))
-    application.add_handler(CommandHandler("my_schedule", my_schedule))
     application.add_handler(MessageHandler(filters.TEXT & filters.User(ADMIN_ID), handle_admin_button))
 
     logging.info("Бот запущен и готов к работе!")
