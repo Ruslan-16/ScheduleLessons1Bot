@@ -3,9 +3,10 @@ import json
 import logging
 from datetime import datetime
 from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackContext
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+import shutil
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -28,6 +29,17 @@ def init_json_db():
         logging.error(f"Ошибка при создании базы данных: {e}")
 
 
+def backup_json_file():
+    """Создаёт резервную копию файла данных."""
+    try:
+        backup_path = f"{JSON_DB_PATH}.backup"
+        if os.path.exists(JSON_DB_PATH):
+            shutil.copy(JSON_DB_PATH, backup_path)
+            logging.info(f"Резервная копия создана: {backup_path}")
+    except Exception as e:
+        logging.error(f"Ошибка при создании резервной копии: {e}")
+
+
 def load_data():
     """Загружает данные из JSON-файла."""
     try:
@@ -44,10 +56,43 @@ def load_data():
 def save_data(data):
     """Сохраняет данные в JSON-файл."""
     try:
+        backup_json_file()  # Создаём резервную копию перед записью
         with open(JSON_DB_PATH, 'w') as f:
             json.dump(data, f, indent=4)
     except Exception as e:
         logging.error(f"Ошибка записи базы данных: {e}")
+
+
+# --- Обработка кнопок ---
+async def handle_admin_button(update: Update, context: CallbackContext):
+    """Обрабатывает нажатие кнопок администратора."""
+    user = update.effective_user
+
+    # Проверяем, что пользователь — администратор
+    if user.id != ADMIN_ID:
+        await update.message.reply_text("У вас нет прав для использования этой функции.")
+        return
+
+    # Текст кнопки
+    text = update.message.text
+    logging.info(f"Обработана кнопка: {text}")
+
+    if text == "Добавить расписание":
+        await update.message.reply_text(
+            "Для добавления расписания используйте команду в формате:\n"
+            "/schedule @username день предмет время1 время2 ...\n\n"
+            "Пример:\n"
+            "/schedule @ivan123 Понедельник Математика 10:00 14:00"
+        )
+    elif text == "Ученики":
+        await students(update, context)
+    elif text == "Просмотр расписания всех":
+        await view_all_schedules(update, context)
+    elif text == "Редактировать расписание":
+        await update.message.reply_text("Эта функция пока в разработке.")
+    elif text == "Сбросить к стандартному":
+        reset_to_standard_schedule()
+        await update.message.reply_text("Расписание сброшено к стандартному.")
 
 
 # --- Команды ---
@@ -93,6 +138,24 @@ async def students(update: Update, context: CallbackContext):
     for info in data["users"].values():
         students_text += f"{info['first_name']} (@{info['username']})\n"
     await update.message.reply_text(students_text)
+
+
+async def view_all_schedules(update: Update, context: CallbackContext):
+    """Отображает расписание всех учеников."""
+    data = load_data()
+    if not data["schedule"]:
+        await update.message.reply_text("Расписание пусто.")
+        return
+
+    schedule_text = "Расписание всех учеников:\n"
+    for user_id, schedule in data["schedule"].items():
+        user_info = data["users"].get(user_id, {})
+        username = user_info.get("username", "Неизвестно")
+        first_name = user_info.get("first_name", "Неизвестно")
+        schedule_text += f"{first_name} (@{username}):\n"
+        for entry in schedule:
+            schedule_text += f"  {entry['day']} {entry['time']} - {entry['description']}\n"
+    await update.message.reply_text(schedule_text)
 
 
 async def schedule(update: Update, context: CallbackContext):
@@ -178,7 +241,9 @@ def main():
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("students", students))
+    application.add_handler(CommandHandler("view_all_schedules", view_all_schedules))
     application.add_handler(CommandHandler("schedule", schedule))
+    application.add_handler(MessageHandler(filters.TEXT & filters.User(ADMIN_ID), handle_admin_button))
 
     logging.info("Бот запущен.")
     application.run_polling()
