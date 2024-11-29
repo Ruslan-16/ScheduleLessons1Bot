@@ -1,8 +1,9 @@
 import os
 import json
 import logging
+import shutil
 from datetime import datetime, timedelta
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -14,16 +15,28 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 
-JSON_DB_PATH = "users.json"
+# Пути к файлу данных
+JSON_DB_PATH = os.getenv("JSON_DB_PATH", "users.json")
 scheduler = AsyncIOScheduler()
 
 # --- Вспомогательные функции ---
 def init_json_db():
     """Создаёт файл базы данных, если его нет."""
     if not os.path.exists(JSON_DB_PATH):
-        logging.info("Создаю файл базы данных users.json...")
+        logging.info(f"Создаю файл базы данных {JSON_DB_PATH}...")
         with open(JSON_DB_PATH, 'w') as f:
             json.dump({"users": {}, "schedule": {}, "standard_schedule": {}}, f)
+
+
+def backup_json_file():
+    """Создаёт резервную копию файла данных."""
+    try:
+        backup_path = f"{JSON_DB_PATH}.backup"
+        if os.path.exists(JSON_DB_PATH):
+            shutil.copy(JSON_DB_PATH, backup_path)
+            logging.info(f"Резервная копия создана: {backup_path}")
+    except Exception as e:
+        logging.error(f"Ошибка при создании резервной копии: {e}")
 
 
 def load_data():
@@ -34,15 +47,25 @@ def load_data():
         with open(JSON_DB_PATH, 'r') as f:
             return json.load(f)
     except (json.JSONDecodeError, FileNotFoundError):
-        logging.error("Ошибка чтения базы данных. Восстанавливаю базу.")
-        data = {"users": {}, "schedule": {}, "standard_schedule": {}}
-        save_data(data)
-        return data
+        logging.error("Ошибка чтения базы данных. Пытаюсь восстановить из резервной копии.")
+        backup_path = f"{JSON_DB_PATH}.backup"
+        if os.path.exists(backup_path):
+            with open(backup_path, 'r') as f:
+                data = json.load(f)
+                save_data(data)
+                logging.info("Данные восстановлены из резервной копии.")
+                return data
+        else:
+            logging.error("Резервная копия отсутствует. Создаю пустую базу.")
+            data = {"users": {}, "schedule": {}, "standard_schedule": {}}
+            save_data(data)
+            return data
 
 
 def save_data(data):
     """Сохраняет данные в JSON-файл."""
     try:
+        backup_json_file()  # Создаём резервную копию перед записью
         with open(JSON_DB_PATH, 'w') as f:
             json.dump(data, f, indent=4)
     except Exception as e:
@@ -142,40 +165,6 @@ async def schedule(update: Update, context: CallbackContext):
     await update.message.reply_text("\n".join(messages))
 
 
-async def edit_schedule(update: Update, context: CallbackContext):
-    """Редактирование расписания."""
-    user_id = update.effective_user.id
-    if user_id != ADMIN_ID:
-        await update.message.reply_text("У вас нет прав для использования этой функции.")
-        return
-
-    data = load_data()
-    users = data["users"]
-
-    if not users:
-        await update.message.reply_text("Список пользователей пуст.")
-        return
-
-    keyboard = [[f"@{info['username']}"] for info in users.values()]
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-    await update.message.reply_text("Выберите ученика для редактирования:", reply_markup=reply_markup)
-    context.user_data["edit_mode"] = True
-
-
-async def students(update: Update, context: CallbackContext):
-    """Отображает список всех учеников."""
-    data = load_data()
-    if not data["users"]:
-        await update.message.reply_text("Список учеников пуст.")
-        return
-
-    students_text = "Список учеников:\n"
-    for info in data["users"].values():
-        students_text += f"{info['first_name']} (@{info['username']})\n"
-    await update.message.reply_text(students_text)
-
-
 async def my_schedule(update: Update, context: CallbackContext):
     """Отображает расписание ученика."""
     user_id = str(update.effective_user.id)
@@ -215,8 +204,6 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("schedule", schedule))
     application.add_handler(CommandHandler("my_schedule", my_schedule))
-    application.add_handler(CommandHandler("students", students))
-    application.add_handler(MessageHandler(filters.TEXT, edit_schedule))
 
     logging.info("Бот запущен.")
     application.run_polling()
