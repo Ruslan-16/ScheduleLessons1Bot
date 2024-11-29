@@ -28,48 +28,18 @@ def init_json_db():
             json.dump({"users": {}, "schedule": {}, "standard_schedule": {}}, f)
 
 
-def backup_json_file():
-    """Создаёт резервную копию файла данных."""
-    try:
-        backup_path = f"{JSON_DB_PATH}.backup"
-        if os.path.exists(JSON_DB_PATH):
-            shutil.copy(JSON_DB_PATH, backup_path)
-            logging.info(f"Резервная копия создана: {backup_path}")
-    except Exception as e:
-        logging.error(f"Ошибка при создании резервной копии: {e}")
-
-
 def load_data():
     """Загружает данные из JSON-файла."""
-    try:
-        if not os.path.exists(JSON_DB_PATH):
-            init_json_db()
-        with open(JSON_DB_PATH, 'r') as f:
-            return json.load(f)
-    except (json.JSONDecodeError, FileNotFoundError):
-        logging.error("Ошибка чтения базы данных. Пытаюсь восстановить из резервной копии.")
-        backup_path = f"{JSON_DB_PATH}.backup"
-        if os.path.exists(backup_path):
-            with open(backup_path, 'r') as f:
-                data = json.load(f)
-                save_data(data)
-                logging.info("Данные восстановлены из резервной копии.")
-                return data
-        else:
-            logging.error("Резервная копия отсутствует. Создаю пустую базу.")
-            data = {"users": {}, "schedule": {}, "standard_schedule": {}}
-            save_data(data)
-            return data
+    if not os.path.exists(JSON_DB_PATH):
+        init_json_db()
+    with open(JSON_DB_PATH, 'r') as f:
+        return json.load(f)
 
 
 def save_data(data):
     """Сохраняет данные в JSON-файл."""
-    try:
-        backup_json_file()  # Создаём резервную копию перед записью
-        with open(JSON_DB_PATH, 'w') as f:
-            json.dump(data, f, indent=4)
-    except Exception as e:
-        logging.error(f"Ошибка записи базы данных: {e}")
+    with open(JSON_DB_PATH, 'w') as f:
+        json.dump(data, f, indent=4)
 
 
 # --- Команды ---
@@ -102,6 +72,53 @@ async def start(update: Update, context: CallbackContext):
             "Вы зарегистрированы! Вы будете получать напоминания о занятиях.",
             reply_markup=ReplyKeyboardMarkup(user_keyboard, resize_keyboard=True)
         )
+
+
+async def students(update: Update, context: CallbackContext):
+    """Отображает список всех учеников."""
+    data = load_data()
+    if not data["users"]:
+        await update.message.reply_text("Список учеников пуст.")
+        return
+
+    students_text = "Список учеников:\n"
+    for info in data["users"].values():
+        students_text += f"{info['first_name']} (@{info['username']})\n"
+    await update.message.reply_text(students_text)
+
+
+async def view_all_schedules(update: Update, context: CallbackContext):
+    """Отображает расписание всех учеников."""
+    data = load_data()
+    if not data["schedule"]:
+        await update.message.reply_text("Расписание пусто.")
+        return
+
+    schedule_text = "Расписание всех учеников:\n"
+    for user_id, schedule in data["schedule"].items():
+        user_info = data["users"].get(user_id, {})
+        username = user_info.get("username", "Неизвестно")
+        first_name = user_info.get("first_name", "Неизвестно")
+        schedule_text += f"{first_name} (@{username}):\n"
+        for entry in schedule:
+            schedule_text += f"  {entry['day']} {entry['time']} - {entry['description']}\n"
+    await update.message.reply_text(schedule_text)
+
+
+async def edit_schedule(update: Update, context: CallbackContext):
+    """Редактирование расписания."""
+    data = load_data()
+    users = data["users"]
+
+    if not users:
+        await update.message.reply_text("Список пользователей пуст.")
+        return
+
+    keyboard = [[f"@{info['username']}"] for info in users.values()]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+    await update.message.reply_text("Выберите ученика для редактирования:", reply_markup=reply_markup)
+    context.user_data["edit_mode"] = True
 
 
 async def schedule(update: Update, context: CallbackContext):
@@ -165,22 +182,6 @@ async def schedule(update: Update, context: CallbackContext):
     await update.message.reply_text("\n".join(messages))
 
 
-async def my_schedule(update: Update, context: CallbackContext):
-    """Отображает расписание ученика."""
-    user_id = str(update.effective_user.id)
-    data = load_data()
-
-    schedule = data["schedule"].get(user_id, [])
-    if not schedule:
-        await update.message.reply_text("Ваше расписание пусто.")
-        return
-
-    schedule_text = "Ваше расписание:\n"
-    for entry in schedule:
-        schedule_text += f"{entry['day']} {entry['time']} - {entry['description']}\n"
-    await update.message.reply_text(schedule_text)
-
-
 def reset_to_standard_schedule():
     """Сбрасывает расписание на стандартное."""
     data = load_data()
@@ -195,15 +196,17 @@ def reset_to_standard_schedule():
 # --- Основная функция ---
 def main():
     """Запуск бота."""
-    global application
+    init_json_db()  # Инициализация базы данных
     application = Application.builder().token(BOT_TOKEN).build()
 
     scheduler.add_job(reset_to_standard_schedule, CronTrigger(day_of_week="sat", hour=23, minute=59))
     scheduler.start()
 
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("students", students))
+    application.add_handler(CommandHandler("view_all_schedules", view_all_schedules))
+    application.add_handler(CommandHandler("edit_schedule", edit_schedule))
     application.add_handler(CommandHandler("schedule", schedule))
-    application.add_handler(CommandHandler("my_schedule", my_schedule))
 
     logging.info("Бот запущен.")
     application.run_polling()
