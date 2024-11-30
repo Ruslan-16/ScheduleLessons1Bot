@@ -21,10 +21,16 @@ if not BOT_TOKEN:
 if ADMIN_ID == 0:
     raise ValueError("Переменная окружения ADMIN_ID не установлена или равна 0!")
 
+
 # --- Вспомогательные функции ---
 def init_json_db():
     """Создаёт файл базы данных, если его нет."""
+    # Создаём директорию, если она отсутствует
+    os.makedirs(os.path.dirname(JSON_DB_PATH), exist_ok=True)
+
+    # Создаём файл базы данных, если его нет
     if not os.path.exists(JSON_DB_PATH):
+        logging.info(f"Создаю файл базы данных {JSON_DB_PATH}...")
         with open(JSON_DB_PATH, 'w') as f:  # type: ignore
             json.dump({"users": {}, "schedule": {}, "standard_schedule": {}}, f)
 
