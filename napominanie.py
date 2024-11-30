@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+from datetime import datetime, timedelta
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -13,7 +14,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 # Переменные окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
-JSON_DB_PATH = os.getenv("JSON_DB_PATH", "users.json")
+JSON_DB_PATH = os.getenv("JSON_DB_PATH", "/persistent_data/users.json")
 scheduler = AsyncIOScheduler()
 
 if not BOT_TOKEN:
@@ -25,21 +26,10 @@ if ADMIN_ID == 0:
 # --- Вспомогательные функции ---
 def init_json_db():
     """Создаёт файл базы данных, если его нет."""
-    # Создаём директорию, если она отсутствует
     os.makedirs(os.path.dirname(JSON_DB_PATH), exist_ok=True)
-
-    # Создаём файл базы данных, если его нет
     if not os.path.exists(JSON_DB_PATH):
-        logging.info(f"Создаю файл базы данных {JSON_DB_PATH}...")
         with open(JSON_DB_PATH, 'w') as f:  # type: ignore
             json.dump({"users": {}, "schedule": {}, "standard_schedule": {}}, f)
-
-
-def backup_json_file():
-    """Создаёт резервную копию файла данных."""
-    backup_path = f"{JSON_DB_PATH}.backup"
-    if os.path.exists(JSON_DB_PATH):
-        shutil.copy(JSON_DB_PATH, backup_path)
 
 
 def load_data():
@@ -52,9 +42,57 @@ def load_data():
 
 def save_data(data):
     """Сохраняет данные в JSON-файл."""
-    backup_json_file()
     with open(JSON_DB_PATH, 'w') as f:  # type: ignore
         json.dump(data, f, indent=4)
+
+
+# --- Напоминания ---
+async def send_reminders(application: Application):
+    """Отправляет напоминания за 1 и за 24 часа до занятия."""
+    data = load_data()
+    now = datetime.now()
+
+    for user_id, schedule in data["schedule"].items():
+        for entry in schedule:
+            lesson_time = parse_lesson_datetime(entry["day"], entry["time"])
+            if not lesson_time:
+                continue
+
+            time_diff = lesson_time - now
+
+            # Напоминание за 24 часа
+            if 23 <= time_diff.total_seconds() / 3600 <= 24 and not entry.get("reminder_sent_24h"):
+                await application.bot.send_message(
+                    chat_id=user_id,
+                    text=f"Напоминание: Завтра в {entry['time']} у вас {entry['description']}."
+                )
+                entry["reminder_sent_24h"] = True
+
+            # Напоминание за 1 час
+            elif 0 < time_diff.total_seconds() / 3600 <= 1 and not entry.get("reminder_sent_1h"):
+                await application.bot.send_message(
+                    chat_id=user_id,
+                    text=f"Напоминание: Через 1 час в {entry['time']} у вас {entry['description']}."
+                )
+                entry["reminder_sent_1h"] = True
+
+    save_data(data)
+
+
+def parse_lesson_datetime(day: str, time: str):
+    """Парсит день недели и время в объект datetime."""
+    valid_days = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
+    if day not in valid_days:
+        return None
+
+    day_index = valid_days.index(day)
+    now = datetime.now()
+    target_date = now + timedelta(days=(day_index - now.weekday()) % 7)
+    try:
+        lesson_time = datetime.strptime(time, "%H:%M").time()
+        return datetime.combine(target_date, lesson_time)
+    except ValueError:
+        return None
 
 
 # --- Команды ---
@@ -155,7 +193,9 @@ async def add_schedule(update: Update, context: CallbackContext):
             data["schedule"][user_id].append({
                 "day": day,
                 "time": time,
-                "description": subject
+                "description": subject,
+                "reminder_sent_1h": False,
+                "reminder_sent_24h": False
             })
 
         messages.append(f"Добавлено: {username} - {day} - {subject} в {', '.join(times)}")
@@ -177,13 +217,8 @@ async def handle_admin_button(update: Update, context: CallbackContext):
         return
 
     text = update.message.text
-    logging.info(f"Обработана кнопка: {text}")
-
     if text == "Добавить расписание":
-        await update.message.reply_text(
-            "Для добавления расписания используйте команду в формате:\n"
-            "/schedule @username день предмет время1 время2 ...\n"
-        )
+        await update.message.reply_text("Для добавления расписания используйте команду /schedule.")
     elif text == "Ученики":
         await students(update, context)
     elif text == "Просмотр расписания всех":
@@ -208,7 +243,15 @@ def main():
     init_json_db()
     application = Application.builder().token(BOT_TOKEN).build()
 
-    scheduler.add_job(reset_to_standard_schedule, CronTrigger(day_of_week="sat", hour=23, minute=59))
+    scheduler.add_job(
+        send_reminders,
+        CronTrigger(minute="*/10"),  # Проверка каждые 10 минут
+        args=[application]
+    )
+    scheduler.add_job(
+        reset_to_standard_schedule,
+        CronTrigger(day_of_week="sat", hour=23, minute=59)
+    )
     scheduler.start()
 
     application.add_handler(CommandHandler("start", start))
