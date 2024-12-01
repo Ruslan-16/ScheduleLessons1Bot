@@ -77,19 +77,28 @@ TIME_OFFSET = timedelta(hours=3)
 # --- Напоминания ---
 async def send_reminders(application: Application):
     """Отправляет напоминания за 1 и за 24 часа до занятия."""
+    logging.info("Функция send_reminders запущена.")  # Лог начала выполнения
     data = load_data()
     now = datetime.now() + TIME_OFFSET  # Корректируем текущее время
+    logging.info(f"Текущее время (с учетом смещения): {now}")
 
     for user_id, schedule in data.get("schedule", {}).items():
+        logging.info(f"Обрабатываем расписание для пользователя: {user_id}")
         for entry in schedule:
             lesson_time = parse_lesson_datetime(entry["day"], entry["time"])
             if not lesson_time:
+                logging.warning(f"Некорректное время или день: {entry}")
                 continue
 
             time_diff = lesson_time - now
+            logging.info(
+                f"Проверяем занятие: {entry['description']} в {entry['time']} ({entry['day']}). "
+                f"До занятия: {time_diff.total_seconds() / 3600:.2f} часов."
+            )
 
             # Напоминание за 24 часа
             if 23 <= time_diff.total_seconds() / 3600 <= 24 and not entry.get("reminder_sent_24h"):
+                logging.info(f"Отправляем напоминание за 24 часа для пользователя {user_id}.")
                 await application.bot.send_message(
                     chat_id=user_id,
                     text=f"Напоминание: Завтра в {entry['time']} у вас {entry['description']}."
@@ -98,6 +107,7 @@ async def send_reminders(application: Application):
 
             # Напоминание за 1 час
             elif 0 < time_diff.total_seconds() / 3600 <= 1 and not entry.get("reminder_sent_1h"):
+                logging.info(f"Отправляем напоминание за 1 час для пользователя {user_id}.")
                 await application.bot.send_message(
                     chat_id=user_id,
                     text=f"Напоминание: Через 1 час в {entry['time']} у вас {entry['description']}."
@@ -105,6 +115,8 @@ async def send_reminders(application: Application):
                 entry["reminder_sent_1h"] = True
 
     save_data(data)
+    logging.info("Завершено выполнение send_reminders. Данные сохранены.")
+
 
 
 
@@ -307,6 +319,7 @@ def main():
     application = Application.builder().token(BOT_TOKEN).build()
 
     # Инициализация планировщика задач
+    logging.info("Инициализация планировщика задач...")
     scheduler.add_job(
         send_reminders,
         CronTrigger(minute="*/10"),  # Запуск каждые 10 минут
@@ -317,6 +330,9 @@ def main():
         CronTrigger(day_of_week="sat", hour=23, minute=59)  # Сброс каждую субботу
     )
     scheduler.start()  # Запуск планировщика
+
+    # Лог запланированных задач
+    logging.info(f"Запланированные задачи: {scheduler.get_jobs()}")
 
     # Обработчики
     application.add_handler(CommandHandler("start", start))
@@ -329,7 +345,4 @@ def main():
     logging.info("Бот запущен.")
     application.run_polling()
 
-
-if __name__ == "__main__":
-    main()
 
