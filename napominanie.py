@@ -8,8 +8,13 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import shutil
 
-# Настройка логирования
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+LOG_FILE_PATH = "/persistent_data/logs.txt"  # Укажите путь для сохранения логов
+
+logging.basicConfig(
+    filename=LOG_FILE_PATH,  # Указываем файл для записи
+    level=logging.INFO,  # Уровень логирования
+    format="%(asctime)s - %(levelname)s - %(message)s"  # Формат сообщений
+)
 
 # Переменные окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN")
