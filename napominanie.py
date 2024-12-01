@@ -45,25 +45,23 @@ def save_data(data):
     with open(JSON_DB_PATH, 'w') as f:  # type: ignore
         json.dump(data, f, indent=4)
 
-
+TIME_OFFSET = timedelta(hours=3)
 # --- Напоминания ---
 async def send_reminders(application: Application):
     """Отправляет напоминания за 1 и за 24 часа до занятия."""
     data = load_data()
-    now = datetime.now()
+    now = datetime.now() + TIME_OFFSET  # Корректируем текущее время
 
     for user_id, schedule in data.get("schedule", {}).items():
         for entry in schedule:
             lesson_time = parse_lesson_datetime(entry["day"], entry["time"])
             if not lesson_time:
-                logging.warning(f"Некорректное время урока: {entry}")
                 continue
 
             time_diff = lesson_time - now
 
             # Напоминание за 24 часа
             if 23 <= time_diff.total_seconds() / 3600 <= 24 and not entry.get("reminder_sent_24h"):
-                logging.info(f"Напоминание за 24 часа для {user_id}: {entry}")
                 await application.bot.send_message(
                     chat_id=user_id,
                     text=f"Напоминание: Завтра в {entry['time']} у вас {entry['description']}."
@@ -72,7 +70,6 @@ async def send_reminders(application: Application):
 
             # Напоминание за 1 час
             elif 0 < time_diff.total_seconds() / 3600 <= 1 and not entry.get("reminder_sent_1h"):
-                logging.info(f"Напоминание за 1 час для {user_id}: {entry}")
                 await application.bot.send_message(
                     chat_id=user_id,
                     text=f"Напоминание: Через 1 час в {entry['time']} у вас {entry['description']}."
