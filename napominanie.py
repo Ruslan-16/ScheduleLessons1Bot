@@ -52,16 +52,18 @@ async def send_reminders(application: Application):
     data = load_data()
     now = datetime.now()
 
-    for user_id, schedule in data["schedule"].items():
+    for user_id, schedule in data.get("schedule", {}).items():
         for entry in schedule:
             lesson_time = parse_lesson_datetime(entry["day"], entry["time"])
             if not lesson_time:
+                logging.warning(f"Некорректное время урока: {entry}")
                 continue
 
             time_diff = lesson_time - now
 
             # Напоминание за 24 часа
             if 23 <= time_diff.total_seconds() / 3600 <= 24 and not entry.get("reminder_sent_24h"):
+                logging.info(f"Напоминание за 24 часа для {user_id}: {entry}")
                 await application.bot.send_message(
                     chat_id=user_id,
                     text=f"Напоминание: Завтра в {entry['time']} у вас {entry['description']}."
@@ -70,6 +72,7 @@ async def send_reminders(application: Application):
 
             # Напоминание за 1 час
             elif 0 < time_diff.total_seconds() / 3600 <= 1 and not entry.get("reminder_sent_1h"):
+                logging.info(f"Напоминание за 1 час для {user_id}: {entry}")
                 await application.bot.send_message(
                     chat_id=user_id,
                     text=f"Напоминание: Через 1 час в {entry['time']} у вас {entry['description']}."
@@ -77,6 +80,7 @@ async def send_reminders(application: Application):
                 entry["reminder_sent_1h"] = True
 
     save_data(data)
+
 
 
 def parse_lesson_datetime(day: str, time: str):
@@ -169,39 +173,73 @@ async def add_schedule(update: Update, context: CallbackContext):
     data = load_data()
     messages = []
 
+    # Проверка наличия ключа schedule
+    if "schedule" not in data:
+        logging.warning("Ключ 'schedule' отсутствует, создаю...")
+        data["schedule"] = {}
+
     valid_days = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
 
     for line in lines:
         parts = line.strip().split()
         if len(parts) < 4:
             messages.append(f"Ошибка: недостаточно данных в строке: {line}")
+            logging.warning(f"Недостаточно данных в строке: {line}")
             continue
 
         username, day, subject, *times = parts
 
         if day not in valid_days:
             messages.append(f"Ошибка: некорректный день недели: {day}")
+            logging.warning(f"Некорректный день недели: {day}")
             continue
 
         user_id = next((uid for uid, info in data["users"].items() if info["username"] == username.lstrip('@')), None)
         if not user_id:
             messages.append(f"Ошибка: пользователь {username} не найден.")
+            logging.warning(f"Пользователь {username} не найден.")
             continue
 
+        # Добавление расписания
         data["schedule"].setdefault(user_id, [])
         for time in times:
-            data["schedule"][user_id].append({
-                "day": day,
-                "time": time,
-                "description": subject,
-                "reminder_sent_1h": False,
-                "reminder_sent_24h": False
-            })
+            try:
+                # Проверка формата времени
+                datetime.strptime(time, "%H:%M")
+                data["schedule"][user_id].append({
+                    "day": day,
+                    "time": time,
+                    "description": subject,
+                    "reminder_sent_1h": False,
+                    "reminder_sent_24h": False
+                })
+            except ValueError:
+                messages.append(f"Ошибка: некорректный формат времени {time} для {username}")
+                logging.warning(f"Некорректный формат времени {time} для {username}")
+                continue
 
         messages.append(f"Добавлено: {username} - {day} - {subject} в {', '.join(times)}")
 
+    # Сохранение данных
     save_data(data)
+    logging.info(f"Данные сохранены: {data}")
     await update.message.reply_text("\n".join(messages))
+
+
+async def my_schedule(update: Update, _):
+    """Отображает расписание ученика."""
+    user_id = str(update.effective_user.id)
+    data = load_data()
+
+    schedule = data.get("schedule", {}).get(user_id, [])
+    if not schedule:
+        await update.message.reply_text("Ваше расписание пусто.")
+        return
+
+    schedule_text = "Ваше расписание:\n"
+    for entry in schedule:
+        schedule_text += f"{entry['day']} {entry['time']} - {entry['description']}\n"
+    await update.message.reply_text(schedule_text)
 
 
 async def edit_schedule(update: Update, _):
@@ -243,6 +281,7 @@ def main():
     init_json_db()
     application = Application.builder().token(BOT_TOKEN).build()
 
+    # Планировщик задач
     scheduler.add_job(
         send_reminders,
         CronTrigger(minute="*/10"),  # Проверка каждые 10 минут
@@ -254,10 +293,12 @@ def main():
     )
     scheduler.start()
 
+    # Обработчики
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("students", students))
     application.add_handler(CommandHandler("view_all_schedules", view_all_schedules))
     application.add_handler(CommandHandler("schedule", add_schedule))
+    application.add_handler(CommandHandler("my_schedule", my_schedule))  # Кнопка "Мое расписание"
     application.add_handler(MessageHandler(filters.TEXT & filters.User(ADMIN_ID), handle_admin_button))
 
     logging.info("Бот запущен.")
@@ -266,3 +307,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
