@@ -306,17 +306,17 @@ def main():
     init_json_db()
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # Планировщик задач
+    # Инициализация планировщика задач
     scheduler.add_job(
         send_reminders,
-        CronTrigger(minute="*/10"),  # Проверка каждые 10 минут
+        CronTrigger(minute="*/10"),  # Запуск каждые 10 минут
         args=[application]
     )
     scheduler.add_job(
         reset_to_standard_schedule,
-        CronTrigger(day_of_week="sat", hour=23, minute=59)
+        CronTrigger(day_of_week="sat", hour=23, minute=59)  # Сброс каждую субботу
     )
-    scheduler.start()
+    scheduler.start()  # Запуск планировщика
 
     # Обработчики
     application.add_handler(CommandHandler("start", start))
