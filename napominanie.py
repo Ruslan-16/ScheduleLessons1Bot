@@ -8,23 +8,19 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import shutil
 
-# Убедимся, что директория и файл для логов существуют
-LOG_FILE_PATH = "/persistent_data/logs.txt"
-os.makedirs(os.path.dirname(LOG_FILE_PATH), exist_ok=True)
+LOG_DIR = "/persistent_data"
+LOG_FILE_PATH = f"{LOG_DIR}/logs.txt"
 
-if not os.path.exists(LOG_FILE_PATH):
-    with open(LOG_FILE_PATH, 'w') as f:
-        f.write("")  # Создаем пустой файл
+# Убедимся, что директория существует
+os.makedirs(LOG_DIR, exist_ok=True)
 
 # Настройка логирования
 logging.basicConfig(
+    filename=LOG_FILE_PATH,
     level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler(LOG_FILE_PATH),
-        logging.StreamHandler()
-    ]
+    format="%(asctime)s - %(levelname)s - %(message)s"
 )
+
 # Переменные окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
@@ -323,7 +319,6 @@ def main():
     application = Application.builder().token(BOT_TOKEN).build()
 
     # Инициализация планировщика задач
-    logging.info("Инициализация планировщика задач...")
     scheduler.add_job(
         send_reminders,
         CronTrigger(minute="*/10"),  # Запуск каждые 10 минут
@@ -335,9 +330,6 @@ def main():
     )
     scheduler.start()  # Запуск планировщика
 
-    # Лог запланированных задач
-    logging.info(f"Запланированные задачи: {scheduler.get_jobs()}")
-
     # Обработчики
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("students", students))
@@ -348,5 +340,9 @@ def main():
 
     logging.info("Бот запущен.")
     application.run_polling()
+    logging.info(f"Запланированные задачи: {scheduler.get_jobs()}")
 
+
+if __name__ == "__main__":
+    main()
 
