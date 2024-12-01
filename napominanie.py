@@ -28,8 +28,18 @@ def init_json_db():
     """Создаёт файл базы данных, если его нет."""
     os.makedirs(os.path.dirname(JSON_DB_PATH), exist_ok=True)
     if not os.path.exists(JSON_DB_PATH):
-        with open(JSON_DB_PATH, 'w') as f:  # type: ignore
+        logging.info(f"Создаю файл базы данных {JSON_DB_PATH}...")
+        with open(JSON_DB_PATH, 'w') as f:
             json.dump({"users": {}, "schedule": {}, "standard_schedule": {}}, f)
+    else:
+        logging.info(f"Файл базы данных {JSON_DB_PATH} уже существует.")
+
+def backup_json_file():
+    """Создаёт резервную копию файла данных."""
+    backup_path = f"{JSON_DB_PATH}.backup"
+    if os.path.exists(JSON_DB_PATH):
+        shutil.copy(JSON_DB_PATH, backup_path)
+        logging.info(f"Резервная копия создана: {backup_path}")
 
 
 def load_data():
@@ -39,11 +49,19 @@ def load_data():
     with open(JSON_DB_PATH, 'r') as f:
         return json.load(f)
 
-
 def save_data(data):
-    """Сохраняет данные в JSON-файл."""
-    with open(JSON_DB_PATH, 'w') as f:  # type: ignore
+    """Сохраняет данные в JSON-файл с резервным копированием."""
+    # Создаём резервную копию перед записью
+    backup_path = f"{JSON_DB_PATH}.backup"
+    if os.path.exists(JSON_DB_PATH):
+        shutil.copy(JSON_DB_PATH, backup_path)
+        logging.info(f"Резервная копия создана: {backup_path}")
+
+    # Сохраняем данные
+    with open(JSON_DB_PATH, 'w') as f:
         json.dump(data, f, indent=4)
+    logging.info(f"Данные успешно сохранены в {JSON_DB_PATH}")
+
 
 TIME_OFFSET = timedelta(hours=3)
 # --- Напоминания ---
