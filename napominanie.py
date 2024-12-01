@@ -8,19 +8,23 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import shutil
 
-LOG_DIR = "/persistent_data"
-LOG_FILE_PATH = f"{LOG_DIR}/logs.txt"
+# Убедимся, что директория и файл для логов существуют
+LOG_FILE_PATH = "/persistent_data/logs.txt"
+os.makedirs(os.path.dirname(LOG_FILE_PATH), exist_ok=True)
 
-# Убедимся, что директория существует
-os.makedirs(LOG_DIR, exist_ok=True)
+if not os.path.exists(LOG_FILE_PATH):
+    with open(LOG_FILE_PATH, 'w') as f:
+        f.write("")  # Создаем пустой файл
 
 # Настройка логирования
 logging.basicConfig(
-    filename=LOG_FILE_PATH,
     level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_FILE_PATH),
+        logging.StreamHandler()
+    ]
 )
-
 # Переменные окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
