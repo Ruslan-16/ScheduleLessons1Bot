@@ -1,102 +1,55 @@
-import os
-import json
 import logging
 from datetime import datetime, timedelta
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-import shutil
 
-LOG_DIR = "/persistent_data"
-LOG_FILE_PATH = f"{LOG_DIR}/logs.txt"
+# --- Конфигурация логирования ---
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
-# Проверка и создание директории и файла для логов
-try:
-    os.makedirs(LOG_DIR, exist_ok=True)
-    print(f"Директория логов создана или уже существует: {LOG_DIR}")
+# --- Константы ---
+BOT_TOKEN = "ВАШ_ТОКЕН_БОТА"  # Укажите ваш токен
+ADMIN_ID = 123456789  # Укажите ID администратора
+TIME_OFFSET = timedelta(hours=3)
 
-    if not os.path.exists(LOG_FILE_PATH):
-        with open(LOG_FILE_PATH, 'w') as f:
-            pass
-        print(f"Файл логов создан: {LOG_FILE_PATH}")
-    else:
-        print(f"Файл логов уже существует: {LOG_FILE_PATH}")
+# --- Глобальные данные (хранятся в памяти) ---
+data = {
+    "users": {},  # Список пользователей
+    "schedule": {},  # Расписания
+    "standard_schedule": {}  # Стандартное расписание
+}
 
-    # Настройка логирования только после успешного создания файла
-    logging.basicConfig(
-        filename=LOG_FILE_PATH,
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s"
-    )
-    print("Логирование настроено.")
-except Exception as e:
-    print(f"Ошибка при настройке логирования: {e}")
-    raise
-
-# Переменные окружения
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
-JSON_DB_PATH = os.getenv("JSON_DB_PATH", "/persistent_data/users.json")
 scheduler = AsyncIOScheduler()
-
-if not BOT_TOKEN:
-    raise ValueError("Переменная окружения BOT_TOKEN не установлена!")
-if ADMIN_ID == 0:
-    raise ValueError("Переменная окружения ADMIN_ID не установлена или равна 0!")
 
 
 # --- Вспомогательные функции ---
-def init_json_db():
-    """Создаёт файл базы данных, если его нет."""
-    os.makedirs(os.path.dirname(JSON_DB_PATH), exist_ok=True)
-    if not os.path.exists(JSON_DB_PATH):
-        logging.info(f"Создаю файл базы данных {JSON_DB_PATH}...")
-        with open(JSON_DB_PATH, 'w') as f:
-            json.dump({"users": {}, "schedule": {}, "standard_schedule": {}}, f)
-    else:
-        logging.info(f"Файл базы данных {JSON_DB_PATH} уже существует.")
+def parse_lesson_datetime(day: str, time: str):
+    """Парсит день недели и время в объект datetime."""
+    valid_days = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
+    if day not in valid_days:
+        return None
 
-def backup_json_file():
-    """Создаёт резервную копию файла данных."""
-    backup_path = f"{JSON_DB_PATH}.backup"
-    if os.path.exists(JSON_DB_PATH):
-        shutil.copy(JSON_DB_PATH, backup_path)
-        logging.info(f"Резервная копия создана: {backup_path}")
+    day_index = valid_days.index(day)
+    now = datetime.now()
+    target_date = now + timedelta(days=(day_index - now.weekday()) % 7)
+    try:
+        lesson_time = datetime.strptime(time, "%H:%M").time()
+        return datetime.combine(target_date, lesson_time)
+    except ValueError:
+        return None
 
 
-def load_data():
-    """Загружает данные из JSON-файла."""
-    if not os.path.exists(JSON_DB_PATH):
-        init_json_db()
-    with open(JSON_DB_PATH, 'r') as f:
-        return json.load(f)
-
-def save_data(data):
-    """Сохраняет данные в JSON-файл с резервным копированием."""
-    # Создаём резервную копию перед записью
-    backup_path = f"{JSON_DB_PATH}.backup"
-    if os.path.exists(JSON_DB_PATH):
-        shutil.copy(JSON_DB_PATH, backup_path)
-        logging.info(f"Резервная копия создана: {backup_path}")
-
-    # Сохраняем данные
-    with open(JSON_DB_PATH, 'w') as f:
-        json.dump(data, f, indent=4)
-    logging.info(f"Данные успешно сохранены в {JSON_DB_PATH}")
-
-
-TIME_OFFSET = timedelta(hours=3)
 # --- Напоминания ---
 async def send_reminders(application: Application):
     """Отправляет напоминания за 1 и за 24 часа до занятия."""
-    logging.info("Функция send_reminders запущена.")  # Лог начала выполнения
-    data = load_data()
-    now = datetime.now() + TIME_OFFSET  # Корректируем текущее время
-    logging.info(f"Текущее время (с учетом смещения): {now}")
+    logging.info("Функция send_reminders запущена.")
+    now = datetime.now() + TIME_OFFSET
 
     for user_id, schedule in data.get("schedule", {}).items():
-        logging.info(f"Обрабатываем расписание для пользователя: {user_id}")
         for entry in schedule:
             lesson_time = parse_lesson_datetime(entry["day"], entry["time"])
             if not lesson_time:
@@ -104,10 +57,6 @@ async def send_reminders(application: Application):
                 continue
 
             time_diff = lesson_time - now
-            logging.info(
-                f"Проверяем занятие: {entry['description']} в {entry['time']} ({entry['day']}). "
-                f"До занятия: {time_diff.total_seconds() / 3600:.2f} часов."
-            )
 
             # Напоминание за 24 часа
             if 23 <= time_diff.total_seconds() / 3600 <= 24 and not entry.get("reminder_sent_24h"):
@@ -127,37 +76,15 @@ async def send_reminders(application: Application):
                 )
                 entry["reminder_sent_1h"] = True
 
-    save_data(data)
-    logging.info("Завершено выполнение send_reminders. Данные сохранены.")
-
-
-
-
-def parse_lesson_datetime(day: str, time: str):
-    """Парсит день недели и время в объект datetime."""
-    valid_days = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
-    if day not in valid_days:
-        return None
-
-    day_index = valid_days.index(day)
-    now = datetime.now()
-    target_date = now + timedelta(days=(day_index - now.weekday()) % 7)
-    try:
-        lesson_time = datetime.strptime(time, "%H:%M").time()
-        return datetime.combine(target_date, lesson_time)
-    except ValueError:
-        return None
-
 
 # --- Команды ---
 async def start(update: Update, context: CallbackContext):
     """Обрабатывает команду /start."""
     user = update.effective_user
-    data = load_data()
 
-    # Добавляем пользователя
+    # Добавляем пользователя в память
     data["users"][str(user.id)] = {"username": user.username, "first_name": user.first_name}
-    save_data(data)
+    logging.info(f"Пользователь {user.username} ({user.id}) зарегистрирован.")
 
     if user.id == ADMIN_ID:
         admin_keyboard = [
@@ -179,7 +106,6 @@ async def start(update: Update, context: CallbackContext):
 
 async def students(update: Update, _):
     """Отображает список всех учеников."""
-    data = load_data()
     if not data["users"]:
         await update.message.reply_text("Список учеников пуст.")
         return
@@ -192,7 +118,6 @@ async def students(update: Update, _):
 
 async def view_all_schedules(update: Update, _):
     """Отображает расписание всех учеников."""
-    data = load_data()
     if not data["schedule"]:
         await update.message.reply_text("Расписание пусто.")
         return
@@ -220,13 +145,7 @@ async def add_schedule(update: Update, context: CallbackContext):
         return
 
     lines = " ".join(context.args).split("\n")
-    data = load_data()
     messages = []
-
-    # Проверка наличия ключа schedule
-    if "schedule" not in data:
-        logging.warning("Ключ 'schedule' отсутствует, создаю...")
-        data["schedule"] = {}
 
     valid_days = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
 
@@ -234,139 +153,19 @@ async def add_schedule(update: Update, context: CallbackContext):
         parts = line.strip().split()
         if len(parts) < 4:
             messages.append(f"Ошибка: недостаточно данных в строке: {line}")
-            logging.warning(f"Недостаточно данных в строке: {line}")
             continue
 
         username, day, subject, *times = parts
-
         if day not in valid_days:
             messages.append(f"Ошибка: некорректный день недели: {day}")
-            logging.warning(f"Некорректный день недели: {day}")
             continue
 
         user_id = next((uid for uid, info in data["users"].items() if info["username"] == username.lstrip('@')), None)
         if not user_id:
             messages.append(f"Ошибка: пользователь {username} не найден.")
-            logging.warning(f"Пользователь {username} не найден.")
             continue
 
-        # Добавление расписания
         data["schedule"].setdefault(user_id, [])
-        for time in times:
-            try:
-                # Проверка формата времени
-                datetime.strptime(time, "%H:%M")
-                data["schedule"][user_id].append({
-                    "day": day,
-                    "time": time,
-                    "description": subject,
-                    "reminder_sent_1h": False,
-                    "reminder_sent_24h": False
-                })
-            except ValueError:
-                messages.append(f"Ошибка: некорректный формат времени {time} для {username}")
-                logging.warning(f"Некорректный формат времени {time} для {username}")
-                continue
-
-        messages.append(f"Добавлено: {username} - {day} - {subject} в {', '.join(times)}")
-
-    # Сохранение данных
-    save_data(data)
-    logging.info(f"Данные сохранены: {data}")
-    await update.message.reply_text("\n".join(messages))
-
-
-async def my_schedule(update: Update, _):
-    """Отображает расписание ученика."""
-    user_id = str(update.effective_user.id)
-    data = load_data()
-
-    schedule = data.get("schedule", {}).get(user_id, [])
-    if not schedule:
-        await update.message.reply_text("Ваше расписание пусто.")
-        return
-
-    schedule_text = "Ваше расписание:\n"
-    for entry in schedule:
-        schedule_text += f"{entry['day']} {entry['time']} - {entry['description']}\n"
-    await update.message.reply_text(schedule_text)
-
-
-async def edit_schedule(update: Update, context: CallbackContext):
-    """Позволяет администратору редактировать расписание конкретного пользователя."""
-    data = load_data()
-
-    # Проверка: начат ли режим редактирования
-    if "edit_mode" not in context.user_data:
-        # Создаем клавиатуру с пользователями
-        keyboard = [[f"@{info['username']}"] for info in data["users"].values()]
-        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-        # Сообщение с выбором пользователя
-        await update.message.reply_text(
-            "Выберите пользователя для редактирования расписания:",
-            reply_markup=reply_markup
-        )
-        context.user_data["edit_mode"] = True  # Включаем режим редактирования
-        return
-
-    # Получить выбранного пользователя
-    username = update.message.text.lstrip("@")
-    user_id = next((uid for uid, info in data["users"].items() if info["username"] == username), None)
-
-    if not user_id:
-        await update.message.reply_text("Пользователь не найден. Попробуйте снова.")
-        return
-
-    # Сохраняем ID пользователя для редактирования
-    context.user_data["edit_user"] = user_id
-    schedule = data["schedule"].get(user_id, [])
-
-    # Проверяем, есть ли расписание у выбранного пользователя
-    if not schedule:
-        await update.message.reply_text(f"У пользователя @{username} нет расписания.")
-    else:
-        schedule_text = "Текущее расписание:\n"
-        for i, entry in enumerate(schedule, 1):
-            schedule_text += f"{i}. {entry['day']} {entry['time']} - {entry['description']}\n"
-
-        await update.message.reply_text(
-            f"Текущее расписание пользователя @{username}:\n{schedule_text}\n\n"
-            "Введите новое расписание в формате:\n"
-            "день предмет время1 время2 ...\n\nПример:\n"
-            "Понедельник Математика 10:00 14:00"
-        )
-
-    # Включаем режим ожидания нового расписания
-    context.user_data["awaiting_new_schedule"] = True
-
-async def handle_new_schedule(update: Update, context: CallbackContext):
-    """Обрабатывает новое расписание пользователя."""
-    if "awaiting_new_schedule" not in context.user_data:
-        return
-
-    user_id = context.user_data["edit_user"]
-    data = load_data()
-
-    # Удаляем старое расписание
-    data["schedule"][user_id] = []
-
-    # Парсим новое расписание
-    lines = update.message.text.split("\n")
-    valid_days = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
-    messages = []
-
-    for line in lines:
-        parts = line.strip().split()
-        if len(parts) < 3:
-            messages.append(f"Ошибка: недостаточно данных в строке: {line}")
-            continue
-
-        day, subject, *times = parts
-        if day not in valid_days:
-            messages.append(f"Ошибка: некорректный день недели: {day}")
-            continue
-
         for time in times:
             try:
                 datetime.strptime(time, "%H:%M")
@@ -381,71 +180,43 @@ async def handle_new_schedule(update: Update, context: CallbackContext):
                 messages.append(f"Ошибка: некорректный формат времени {time}")
                 continue
 
-    # Сохраняем данные
-    save_data(data)
-    messages.append("Новое расписание успешно сохранено!")
+        messages.append(f"Добавлено: {username} - {day} - {subject} в {', '.join(times)}")
+
     await update.message.reply_text("\n".join(messages))
 
-    # Сброс режима редактирования
-    context.user_data.pop("edit_mode", None)
-    context.user_data.pop("awaiting_new_schedule", None)
-    context.user_data.pop("edit_user", None)
 
-async def reset_to_standard_schedule(update: Update, _):
-    """Сбрасывает расписание к стандартному и сохраняет изменения."""
-    data = load_data()
+async def my_schedule(update: Update, _):
+    """Отображает расписание ученика."""
+    user_id = str(update.effective_user.id)
+    schedule = data.get("schedule", {}).get(user_id, [])
+    if not schedule:
+        await update.message.reply_text("Ваше расписание пусто.")
+        return
 
-    if "standard_schedule" in data:
-        # Сбрасываем расписание
-        data["schedule"] = data["standard_schedule"].copy()
-        save_data(data)  # Сохраняем изменения
-        await update.message.reply_text("Расписание успешно сброшено к стандартному!")
-    else:
-        await update.message.reply_text("Стандартное расписание не задано. Сброс невозможен.")
+    schedule_text = "Ваше расписание:\n"
+    for entry in schedule:
+        schedule_text += f"{entry['day']} {entry['time']} - {entry['description']}\n"
+    await update.message.reply_text(schedule_text)
+
 
 # --- Основная функция ---
 def main():
-    try:
-        logging.info("Инициализация базы данных...")
-        init_json_db()
-        logging.info("База данных инициализирована.")
+    application = Application.builder().token(BOT_TOKEN).build()
 
-        logging.info("Создаю приложение Telegram...")
-        application = Application.builder().token(BOT_TOKEN).build()
-        logging.info("Приложение Telegram создано.")
+    # Планировщик задач
+    scheduler.add_job(send_reminders, CronTrigger(minute="*/10"), args=[application])
+    scheduler.start()
 
-        # Планировщик задач
-        logging.info("Настраиваю задачи планировщика...")
-        scheduler.add_job(
-            send_reminders,
-            CronTrigger(minute="*/10"),  # Запуск каждые 10 минут
-            args=[application]
-        )
-        scheduler.add_job(
-            reset_to_standard_schedule,
-            CronTrigger(day_of_week="sat", hour=23, minute=59)  # Сброс каждую субботу
-        )
-        scheduler.start()
-        logging.info(f"Запланированные задачи: {scheduler.get_jobs()}")
+    # Обработчики команд
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("students", students))
+    application.add_handler(CommandHandler("view_all_schedules", view_all_schedules))
+    application.add_handler(CommandHandler("schedule", add_schedule))
+    application.add_handler(CommandHandler("my_schedule", my_schedule))
 
-        # Обработчики команд
-        logging.info("Добавляю обработчики команд...")
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(CommandHandler("students", students))
-        application.add_handler(CommandHandler("view_all_schedules", view_all_schedules))
-        application.add_handler(CommandHandler("schedule", add_schedule))
-        application.add_handler(CommandHandler("my_schedule", my_schedule))
-        application.add_handler(CommandHandler("edit_schedule", edit_schedule))
-        application.add_handler(MessageHandler(filters.TEXT & filters.User(ADMIN_ID), handle_new_schedule))
-        logging.info("Обработчики команд добавлены.")
-
-        logging.info("Запускаю бота...")
-        application.run_polling()
-        logging.info("Бот успешно запущен.")
-
-    except Exception as e:
-        logging.error(f"Ошибка в main(): {e}")
-        raise
+    logging.info("Бот запущен.")
+    application.run_polling()
 
 
-
+if __name__ == "__main__":
+    main()
