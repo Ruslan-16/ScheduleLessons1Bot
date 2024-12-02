@@ -279,46 +279,123 @@ async def my_schedule(update: Update, _):
     await update.message.reply_text(schedule_text)
 
 
-async def edit_schedule(update: Update, _):
-    """Функция редактирования расписания."""
-    await update.message.reply_text("Функция редактирования расписания пока в разработке.")
+async def edit_schedule(update: Update, context: CallbackContext):
+    """Позволяет администратору редактировать расписание конкретного пользователя."""
+    data = load_data()
 
+    # Проверка: начат ли режим редактирования
+    if "edit_mode" not in context.user_data:
+        # Создаем клавиатуру с пользователями
+        keyboard = [[f"@{info['username']}"] for info in data["users"].values()]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-async def handle_admin_button(update: Update, context: CallbackContext):
-    """Обрабатывает нажатие кнопок администратора."""
-    user = update.effective_user
-    if user.id != ADMIN_ID:
-        await update.message.reply_text("У вас нет прав для использования этой функции.")
+        # Сообщение с выбором пользователя
+        await update.message.reply_text(
+            "Выберите пользователя для редактирования расписания:",
+            reply_markup=reply_markup
+        )
+        context.user_data["edit_mode"] = True  # Включаем режим редактирования
         return
 
-    text = update.message.text
-    if text == "Добавить расписание":
-        await update.message.reply_text("Для добавления расписания используйте команду /schedule.")
-    elif text == "Ученики":
-        await students(update, context)
-    elif text == "Просмотр расписания всех":
-        await view_all_schedules(update, context)
-    elif text == "Редактировать расписание":
-        await edit_schedule(update, context)
-    elif text == "Сбросить к стандартному":
-        reset_to_standard_schedule()
-        await update.message.reply_text("Расписание сброшено к стандартному.")
+    # Получить выбранного пользователя
+    username = update.message.text.lstrip("@")
+    user_id = next((uid for uid, info in data["users"].items() if info["username"] == username), None)
 
+    if not user_id:
+        await update.message.reply_text("Пользователь не найден. Попробуйте снова.")
+        return
 
-def reset_to_standard_schedule():
-    """Сбрасывает расписание на стандартное."""
+    # Сохраняем ID пользователя для редактирования
+    context.user_data["edit_user"] = user_id
+    schedule = data["schedule"].get(user_id, [])
+
+    # Проверяем, есть ли расписание у выбранного пользователя
+    if not schedule:
+        await update.message.reply_text(f"У пользователя @{username} нет расписания.")
+    else:
+        schedule_text = "Текущее расписание:\n"
+        for i, entry in enumerate(schedule, 1):
+            schedule_text += f"{i}. {entry['day']} {entry['time']} - {entry['description']}\n"
+
+        await update.message.reply_text(
+            f"Текущее расписание пользователя @{username}:\n{schedule_text}\n\n"
+            "Введите новое расписание в формате:\n"
+            "день предмет время1 время2 ...\n\nПример:\n"
+            "Понедельник Математика 10:00 14:00"
+        )
+
+    # Включаем режим ожидания нового расписания
+    context.user_data["awaiting_new_schedule"] = True
+
+async def handle_new_schedule(update: Update, context: CallbackContext):
+    """Обрабатывает новое расписание пользователя."""
+    if "awaiting_new_schedule" not in context.user_data:
+        return
+
+    user_id = context.user_data["edit_user"]
     data = load_data()
-    if "standard_schedule" in data:
-        data["schedule"] = data["standard_schedule"]
-        save_data(data)
 
+    # Удаляем старое расписание
+    data["schedule"][user_id] = []
+
+    # Парсим новое расписание
+    lines = update.message.text.split("\n")
+    valid_days = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
+    messages = []
+
+    for line in lines:
+        parts = line.strip().split()
+        if len(parts) < 3:
+            messages.append(f"Ошибка: недостаточно данных в строке: {line}")
+            continue
+
+        day, subject, *times = parts
+        if day not in valid_days:
+            messages.append(f"Ошибка: некорректный день недели: {day}")
+            continue
+
+        for time in times:
+            try:
+                datetime.strptime(time, "%H:%M")
+                data["schedule"][user_id].append({
+                    "day": day,
+                    "time": time,
+                    "description": subject,
+                    "reminder_sent_1h": False,
+                    "reminder_sent_24h": False
+                })
+            except ValueError:
+                messages.append(f"Ошибка: некорректный формат времени {time}")
+                continue
+
+    # Сохраняем данные
+    save_data(data)
+    messages.append("Новое расписание успешно сохранено!")
+    await update.message.reply_text("\n".join(messages))
+
+    # Сброс режима редактирования
+    context.user_data.pop("edit_mode", None)
+    context.user_data.pop("awaiting_new_schedule", None)
+    context.user_data.pop("edit_user", None)
+
+async def reset_to_standard_schedule(update: Update, _):
+    """Сбрасывает расписание к стандартному и сохраняет изменения."""
+    data = load_data()
+
+    if "standard_schedule" in data:
+        # Сбрасываем расписание
+        data["schedule"] = data["standard_schedule"].copy()
+        save_data(data)  # Сохраняем изменения
+        await update.message.reply_text("Расписание успешно сброшено к стандартному!")
+    else:
+        await update.message.reply_text("Стандартное расписание не задано. Сброс невозможен.")
 
 # --- Основная функция ---
 def main():
     init_json_db()
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # Инициализация планировщика задач
+    # Планировщик задач
     scheduler.add_job(
         send_reminders,
         CronTrigger(minute="*/10"),  # Запуск каждые 10 минут
@@ -328,21 +405,21 @@ def main():
         reset_to_standard_schedule,
         CronTrigger(day_of_week="sat", hour=23, minute=59)  # Сброс каждую субботу
     )
-    scheduler.start()  # Запуск планировщика
+    scheduler.start()
 
-    # Обработчики
+    # Обработчики команд
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("students", students))
     application.add_handler(CommandHandler("view_all_schedules", view_all_schedules))
     application.add_handler(CommandHandler("schedule", add_schedule))
-    application.add_handler(CommandHandler("my_schedule", my_schedule))  # Кнопка "Мое расписание"
-    application.add_handler(MessageHandler(filters.TEXT & filters.User(ADMIN_ID), handle_admin_button))
+    application.add_handler(CommandHandler("my_schedule", my_schedule))
+    application.add_handler(CommandHandler("edit_schedule", edit_schedule))
+
+    # Обработчик для текстовых сообщений (режим редактирования)
+    application.add_handler(MessageHandler(filters.TEXT & filters.User(ADMIN_ID), handle_new_schedule))
 
     logging.info("Бот запущен.")
     application.run_polling()
-    logging.info(f"Запланированные задачи: {scheduler.get_jobs()}")
 
 
-if __name__ == "__main__":
-    main()
 
