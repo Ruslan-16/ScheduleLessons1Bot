@@ -14,12 +14,18 @@ LOG_FILE_PATH = f"{LOG_DIR}/logs.txt"
 # Убедимся, что директория существует
 os.makedirs(LOG_DIR, exist_ok=True)
 
+# Убедимся, что файл существует
+if not os.path.exists(LOG_FILE_PATH):
+    with open(LOG_FILE_PATH, 'w') as f:
+        pass  # Создаем пустой файл, если он отсутствует
+
 # Настройка логирования
 logging.basicConfig(
     filename=LOG_FILE_PATH,
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
+
 
 # Переменные окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN")
