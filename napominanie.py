@@ -150,6 +150,72 @@ async def handle_admin_button(update: Update, context: CallbackContext):
         await reset_to_standard_schedule()
         await update.message.reply_text("Расписание сброшено к стандартному.")
 
+
+async def add_schedule_for_students(update: Update, context: CallbackContext):
+    """Добавляет расписание для нескольких учеников."""
+    data = load_data()
+    user = update.effective_user
+
+    # Проверка на права администратора
+    if user.id != ADMIN_ID:
+        await update.message.reply_text("У вас нет прав для использования этой функции.")
+        return
+
+    # Проверяем, что формат правильный
+    if len(context.args) < 5:
+        await update.message.reply_text(
+            "Неверный формат. Пример использования: /schedule @username Понедельник Математика 10:00 14:00, @username2 Вторник Физика 9:00 12:00"
+        )
+        return
+
+    # Итерируем по списку аргументов
+    added_count = 0
+    for i in range(0, len(context.args), 5):  # Шаг 5, чтобы обрабатывать блоки данных для каждого ученика
+        if i + 4 >= len(context.args):
+            break  # Не хватает данных для обработки
+
+        username = context.args[i]  # @username
+        day = context.args[i + 1]  # День недели (например, Понедельник)
+        subject = context.args[i + 2]  # Название предмета (например, Математика)
+        start_time = context.args[i + 3]  # Время начала (например, 10:00)
+        end_time = context.args[i + 4]  # Время конца (например, 14:00)
+
+        # Находим ученика по username
+        student = None
+        for user_id, info in data["users"].items():
+            if info["username"] == username:
+                student = user_id
+                break
+
+        if not student:
+            await update.message.reply_text(f"Ученик с username @{username} не найден.")
+            continue
+
+        # Добавляем расписание
+        schedule_entry = {
+            "day": day,
+            "subject": subject,
+            "time": f"{start_time} - {end_time}",
+            "description": f"{subject} ({start_time} - {end_time})"
+        }
+
+        # Обновляем расписание для этого ученика
+        if student not in data["schedule"]:
+            data["schedule"][student] = []
+
+        data["schedule"][student].append(schedule_entry)
+        added_count += 1
+
+    # Сохраняем данные
+    save_data(data)
+
+    # Ответ пользователю
+    if added_count > 0:
+        await update.message.reply_text(f"Добавлено {added_count} расписаний.")
+    else:
+        await update.message.reply_text("Не удалось добавить расписания. Пожалуйста, проверьте ввод.")
+
+
 # --- Основная функция ---
 def main():
     init_json_db()
@@ -160,6 +226,7 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & filters.User(ADMIN_ID), handle_admin_button))
     application.add_handler(CommandHandler("students", students))
     application.add_handler(CommandHandler("view_all_schedules", view_all_schedules))
+    application.add_handler(CommandHandler("schedule", add_schedule_for_students))
 
     logging.info("Бот запущен.")
     application.run_polling()
