@@ -405,34 +405,47 @@ async def reset_to_standard_schedule(update: Update, _):
 
 # --- Основная функция ---
 def main():
-    init_json_db()
-    application = Application.builder().token(BOT_TOKEN).build()
+    try:
+        logging.info("Инициализация базы данных...")
+        init_json_db()
+        logging.info("База данных инициализирована.")
 
-    # Планировщик задач
-    scheduler.add_job(
-        send_reminders,
-        CronTrigger(minute="*/10"),  # Запуск каждые 10 минут
-        args=[application]
-    )
-    scheduler.add_job(
-        reset_to_standard_schedule,
-        CronTrigger(day_of_week="sat", hour=23, minute=59)  # Сброс каждую субботу
-    )
-    scheduler.start()
+        logging.info("Создаю приложение Telegram...")
+        application = Application.builder().token(BOT_TOKEN).build()
+        logging.info("Приложение Telegram создано.")
 
-    # Обработчики команд
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("students", students))
-    application.add_handler(CommandHandler("view_all_schedules", view_all_schedules))
-    application.add_handler(CommandHandler("schedule", add_schedule))
-    application.add_handler(CommandHandler("my_schedule", my_schedule))
-    application.add_handler(CommandHandler("edit_schedule", edit_schedule))
+        # Планировщик задач
+        logging.info("Настраиваю задачи планировщика...")
+        scheduler.add_job(
+            send_reminders,
+            CronTrigger(minute="*/10"),  # Запуск каждые 10 минут
+            args=[application]
+        )
+        scheduler.add_job(
+            reset_to_standard_schedule,
+            CronTrigger(day_of_week="sat", hour=23, minute=59)  # Сброс каждую субботу
+        )
+        scheduler.start()
+        logging.info(f"Запланированные задачи: {scheduler.get_jobs()}")
 
-    # Обработчик для текстовых сообщений (режим редактирования)
-    application.add_handler(MessageHandler(filters.TEXT & filters.User(ADMIN_ID), handle_new_schedule))
+        # Обработчики команд
+        logging.info("Добавляю обработчики команд...")
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("students", students))
+        application.add_handler(CommandHandler("view_all_schedules", view_all_schedules))
+        application.add_handler(CommandHandler("schedule", add_schedule))
+        application.add_handler(CommandHandler("my_schedule", my_schedule))
+        application.add_handler(CommandHandler("edit_schedule", edit_schedule))
+        application.add_handler(MessageHandler(filters.TEXT & filters.User(ADMIN_ID), handle_new_schedule))
+        logging.info("Обработчики команд добавлены.")
 
-    logging.info("Бот запущен.")
-    application.run_polling()
+        logging.info("Запускаю бота...")
+        application.run_polling()
+        logging.info("Бот успешно запущен.")
+
+    except Exception as e:
+        logging.error(f"Ошибка в main(): {e}")
+        raise
 
 
 
