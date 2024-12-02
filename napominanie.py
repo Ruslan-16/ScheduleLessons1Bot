@@ -95,18 +95,75 @@ async def students(update: Update, _):
         students_text += f"{info['first_name']} (@{info['username']})\n"
     await update.message.reply_text(students_text)
 
-async def add_schedule(update: Update, _):
-    """Отображает пример добавления расписания для админа."""
-    schedule_example = (
-        "Для добавления расписания используйте команду /schedule. Пример:\n"
-        "/schedule @ivan123 Понедельник Математика 10:00 14:00\n\n"
-        "Где:\n"
-        "1. @username — это username ученика.\n"
-        "2. День недели (например, Понедельник).\n"
-        "3. Название предмета (например, Математика).\n"
-        "4. Время (например, 10:00)."
-    )
-    await update.message.reply_text(schedule_example)
+async def add_schedule(update: Update, context: CallbackContext):
+    """Добавляет расписание для нескольких учеников и выводит сообщение об успехе."""
+    if not context.args:
+        await update.message.reply_text(
+            "Использование: /schedule\n"
+            "@username день предмет время1 время2 ...\n\n"
+            "Пример:\n"
+            "/schedule @ivan123 Понедельник Математика 10:00 14:00"
+        )
+        return
+
+    lines = " ".join(context.args).split("\n")
+    data = load_data()
+    messages = []
+
+    # Проверка наличия ключа schedule
+    if "schedule" not in data:
+        logging.warning("Ключ 'schedule' отсутствует, создаю...")
+        data["schedule"] = {}
+
+    valid_days = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
+
+    for line in lines:
+        parts = line.strip().split()
+        if len(parts) < 4:
+            messages.append(f"Ошибка: недостаточно данных в строке: {line}")
+            logging.warning(f"Недостаточно данных в строке: {line}")
+            continue
+
+        username, day, subject, *times = parts
+
+        if day not in valid_days:
+            messages.append(f"Ошибка: некорректный день недели: {day}")
+            logging.warning(f"Некорректный день недели: {day}")
+            continue
+
+        user_id = next((uid for uid, info in data["users"].items() if info["username"] == username.lstrip('@')), None)
+        if not user_id:
+            messages.append(f"Ошибка: пользователь {username} не найден.")
+            logging.warning(f"Пользователь {username} не найден.")
+            continue
+
+        # Добавление расписания
+        data["schedule"].setdefault(user_id, [])
+        for time in times:
+            try:
+                # Проверка формата времени
+                datetime.strptime(time, "%H:%M")
+                data["schedule"][user_id].append({
+                    "day": day,
+                    "time": time,
+                    "description": subject,
+                    "reminder_sent_1h": False,
+                    "reminder_sent_24h": False
+                })
+            except ValueError:
+                messages.append(f"Ошибка: некорректный формат времени {time} для {username}")
+                logging.warning(f"Некорректный формат времени {time} для {username}")
+                continue
+
+        messages.append(f"Добавлено: {username} - {day} - {subject} в {', '.join(times)}")
+
+    # Сохранение данных
+    save_data(data)
+    logging.info(f"Данные успешно сохранены: {data}")
+
+    # Отправляем сообщение, что расписание добавлено
+    await update.message.reply_text("\n".join(messages))
+
 
 async def view_all_schedules(update: Update, _):
     """Отображает расписание всех учеников."""
@@ -124,6 +181,7 @@ async def view_all_schedules(update: Update, _):
         for entry in schedule:
             schedule_text += f"  {entry['day']} {entry['time']} - {entry['description']}\n"
     await update.message.reply_text(schedule_text)
+
 
 async def reset_to_standard_schedule():
     """Сбрасывает расписание на стандартное."""
