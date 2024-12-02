@@ -32,6 +32,7 @@ if not BOT_TOKEN:
 if ADMIN_ID == 0:
     raise ValueError("Переменная окружения ADMIN_ID не установлена или равна 0!")
 
+
 # --- Вспомогательные функции ---
 def init_json_db():
     """Создаёт файл базы данных, если его нет."""
@@ -39,7 +40,7 @@ def init_json_db():
     if not os.path.exists(JSON_DB_PATH):
         logging.info(f"Создаю файл базы данных {JSON_DB_PATH}...")
         with open(JSON_DB_PATH, 'w') as f:
-            json.dump({"users": {}, "schedule": {}, "standard_schedule": {}}, f)
+            json.dump({"users": {}, "schedule": {}, "standard_schedule": {}}, f, ensure_ascii=False, indent=4)
     else:
         logging.info(f"Файл базы данных {JSON_DB_PATH} уже существует.")
 
@@ -56,7 +57,7 @@ def load_data():
     """Загружает данные из JSON-файла."""
     if not os.path.exists(JSON_DB_PATH):
         init_json_db()
-    with open(JSON_DB_PATH, 'r') as f:
+    with open(JSON_DB_PATH, 'r', encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -69,13 +70,12 @@ def save_data(data):
         logging.info(f"Резервная копия создана: {backup_path}")
 
     # Сохраняем данные
-    with open(JSON_DB_PATH, 'w') as f:
-        json.dump(data, f, indent=4)
+    with open(JSON_DB_PATH, 'w', encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
     logging.info(f"Данные успешно сохранены в {JSON_DB_PATH}")
 
 
 TIME_OFFSET = timedelta(hours=3)
-
 # --- Напоминания ---
 async def send_reminders(application: Application):
     """Отправляет напоминания за 1 и за 24 часа до занятия."""
@@ -202,91 +202,28 @@ async def add_schedule(update: Update, context: CallbackContext):
             "Использование: /schedule\n"
             "@username день предмет время1 время2 ...\n\n"
             "Пример:\n"
-            "/schedule @ivan123 Понедельник Математика 10:00 14:00"
+            "/schedule @ivan123 Понедельник Алгебра 10:00 11:30"
         )
         return
 
-    lines = " ".join(context.args).split("\n")
-    data = load_data()
-    messages = []
 
-    # Проверка наличия ключа schedule
-    if "schedule" not in data:
-        logging.warning("Ключ 'schedule' отсутствует, создаю...")
-        data["schedule"] = {}
-
-    valid_days = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
-
-    for line in lines:
-        split_line = line.split()
-        if len(split_line) < 3:
-            messages.append(f"Ошибка: Неверный формат для записи: {line}")
-            continue
-
-        username, day, *times = split_line
-        if day not in valid_days:
-            messages.append(f"Ошибка: Некорректный день недели в записи: {line}")
-            continue
-
-        user_id = next((uid for uid, info in data["users"].items() if info["username"] == username.lstrip('@')), None)
-        if user_id is None:
-            messages.append(f"Ошибка: пользователь {username} не найден.")
-            logging.warning(f"Пользователь {username} не найден.")
-            continue
-
-        schedule = data["schedule"].get(user_id, [])
-        for time in times:
-            schedule.append({
-                "day": day,
-                "time": time,
-                "description": "Неизвестно",
-                "reminder_sent_24h": False,
-                "reminder_sent_1h": False
-            })
-        data["schedule"][user_id] = schedule
-        messages.append(f"Добавлено расписание для {username}: {day} {', '.join(times)}")
-
-    save_data(data)
-
-    # Вывод сообщений
-    if messages:
-        await update.message.reply_text("\n".join(messages))
-
-
-async def reset_to_standard_schedule(update: Update, _):
-    """Сброс расписания к стандартному."""
-    data = load_data()
-    standard_schedule = data.get("standard_schedule", {})
-
-    if not standard_schedule:
-        await update.message.reply_text("Стандартное расписание не найдено.")
-        return
-
-    data["schedule"] = standard_schedule
-    save_data(data)
-    await update.message.reply_text("Расписание сброшено к стандартному.")
-
-
+# --- Запуск бота ---
 def main():
-    """Запуск бота."""
+    """Запуск основного приложения."""
     init_json_db()
-
-    # Создаём приложение
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # Команды
+    # Зарегистрировать обработчики команд
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("students", students))
-    application.add_handler(CommandHandler("view_all_schedules", view_all_schedules))
-    application.add_handler(CommandHandler("schedule", add_schedule))
-    application.add_handler(CommandHandler("reset_schedule", reset_to_standard_schedule))
+    application.add_handler(CommandHandler("schedule", view_all_schedules))
 
-    # Напоминания
-    scheduler.add_job(send_reminders, CronTrigger(hour="0-23", minute="*/30", second="0", timezone="Europe/Moscow"))
+    # Планировщик
+    scheduler.add_job(send_reminders, CronTrigger(hour=9, minute=0))  # Пример отправки раз в день
+    scheduler.start()
 
-    # Запуск
+    # Запуск бота
     application.run_polling()
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
