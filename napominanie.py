@@ -11,25 +11,34 @@ import shutil
 LOG_DIR = "/persistent_data"
 LOG_FILE_PATH = f"{LOG_DIR}/logs.txt"
 
+# --- Проверка и создание директории и файла для логов ---
+try:
+    # Убедимся, что директория существует
+    os.makedirs(LOG_DIR, exist_ok=True)
+    print(f"Директория логов создана или уже существует: {LOG_DIR}")
 
-# Убедимся, что директория существует
-os.makedirs(LOG_DIR, exist_ok=True)
+    # Убедимся, что файл существует
+    if not os.path.exists(LOG_FILE_PATH):
+        with open(LOG_FILE_PATH, 'w') as f:
+            pass  # Создаем пустой файл, если он отсутствует
+        print(f"Файл логов создан: {LOG_FILE_PATH}")
+    else:
+        print(f"Файл логов уже существует: {LOG_FILE_PATH}")
+except Exception as e:
+    print(f"Ошибка при создании файла логов: {e}")
+    raise
 
-# Убедимся, что файл существует
-if not os.path.exists(LOG_FILE_PATH):
-    with open(LOG_FILE_PATH, 'w') as f:
-        pass  # Создаем пустой файл, если он отсутствует
-    print(f"Файл логов создан: {LOG_FILE_PATH}")  # Отладочное сообщение
-else:
-    print(f"Файл логов уже существует: {LOG_FILE_PATH}")  # Отладочное сообщение
-
-# Настройка логирования
-logging.basicConfig(
-    filename=LOG_FILE_PATH,
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
-
+# --- Настройка логирования ---
+try:
+    logging.basicConfig(
+        filename=LOG_FILE_PATH,
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s"
+    )
+    print("Логирование настроено.")
+except Exception as e:
+    print(f"Ошибка настройки логирования: {e}")
+    raise
 
 # Переменные окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN")
