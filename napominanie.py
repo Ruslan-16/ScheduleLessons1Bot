@@ -44,6 +44,7 @@ def init_json_db():
     else:
         logging.info(f"Файл базы данных {JSON_DB_PATH} уже существует.")
 
+
 def backup_json_file():
     """Создаёт резервную копию файла данных."""
     backup_path = f"{JSON_DB_PATH}.backup"
@@ -58,6 +59,7 @@ def load_data():
         init_json_db()
     with open(JSON_DB_PATH, 'r') as f:
         return json.load(f)
+
 
 def save_data(data):
     """Сохраняет данные в JSON-файл с резервным копированием."""
@@ -74,6 +76,8 @@ def save_data(data):
 
 
 TIME_OFFSET = timedelta(hours=3)
+
+
 # --- Напоминания ---
 async def send_reminders(application: Application):
     """Отправляет напоминания за 1 и за 24 часа до занятия."""
@@ -116,8 +120,6 @@ async def send_reminders(application: Application):
 
     save_data(data)
     logging.info("Завершено выполнение send_reminders. Данные сохранены.")
-
-
 
 
 def parse_lesson_datetime(day: str, time: str):
@@ -218,131 +220,75 @@ async def add_schedule(update: Update, context: CallbackContext):
     valid_days = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
 
     for line in lines:
-        parts = line.strip().split()
-        if len(parts) < 4:
-            messages.append(f"Ошибка: недостаточно данных в строке: {line}")
-            logging.warning(f"Недостаточно данных в строке: {line}")
+        split_line = line.split()
+        if len(split_line) < 3:
+            messages.append(f"Ошибка: Неверный формат для записи: {line}")
             continue
 
-        username, day, subject, *times = parts
-
+        username, day, *times = split_line
         if day not in valid_days:
-            messages.append(f"Ошибка: некорректный день недели: {day}")
-            logging.warning(f"Некорректный день недели: {day}")
+            messages.append(f"Ошибка: Некорректный день недели в записи: {line}")
             continue
 
         user_id = next((uid for uid, info in data["users"].items() if info["username"] == username.lstrip('@')), None)
-        if not user_id:
+        if user_id is None:
             messages.append(f"Ошибка: пользователь {username} не найден.")
             logging.warning(f"Пользователь {username} не найден.")
             continue
 
-        # Добавление расписания
-        data["schedule"].setdefault(user_id, [])
+        schedule = data["schedule"].get(user_id, [])
         for time in times:
-            try:
-                # Проверка формата времени
-                datetime.strptime(time, "%H:%M")
-                data["schedule"][user_id].append({
-                    "day": day,
-                    "time": time,
-                    "description": subject,
-                    "reminder_sent_1h": False,
-                    "reminder_sent_24h": False
-                })
-            except ValueError:
-                messages.append(f"Ошибка: некорректный формат времени {time} для {username}")
-                logging.warning(f"Некорректный формат времени {time} для {username}")
-                continue
+            schedule.append({
+                "day": day,
+                "time": time,
+                "description": "Неизвестно",
+                "reminder_sent_24h": False,
+                "reminder_sent_1h": False
+            })
+        data["schedule"][user_id] = schedule
+        messages.append(f"Добавлено расписание для {username}: {day} {', '.join(times)}")
 
-        messages.append(f"Добавлено: {username} - {day} - {subject} в {', '.join(times)}")
-
-    # Сохранение данных
     save_data(data)
-    logging.info(f"Данные сохранены: {data}")
-    await update.message.reply_text("\n".join(messages))
+
+    # Вывод сообщений
+    if messages:
+        await update.message.reply_text("\n".join(messages))
 
 
-async def my_schedule(update: Update, _):
-    """Отображает расписание ученика."""
-    user_id = str(update.effective_user.id)
+async def reset_to_standard_schedule(update: Update, _):
+    """Сброс расписания к стандартному."""
     data = load_data()
+    standard_schedule = data.get("standard_schedule", {})
 
-    schedule = data.get("schedule", {}).get(user_id, [])
-    if not schedule:
-        await update.message.reply_text("Ваше расписание пусто.")
+    if not standard_schedule:
+        await update.message.reply_text("Стандартное расписание не найдено.")
         return
 
-    schedule_text = "Ваше расписание:\n"
-    for entry in schedule:
-        schedule_text += f"{entry['day']} {entry['time']} - {entry['description']}\n"
-    await update.message.reply_text(schedule_text)
+    data["schedule"] = standard_schedule
+    save_data(data)
+    await update.message.reply_text("Расписание сброшено к стандартному.")
 
 
-async def edit_schedule(update: Update, _):
-    """Функция редактирования расписания."""
-    await update.message.reply_text("Функция редактирования расписания пока в разработке.")
-
-
-async def handle_admin_button(update: Update, context: CallbackContext):
-    """Обрабатывает нажатие кнопок администратора."""
-    user = update.effective_user
-    if user.id != ADMIN_ID:
-        await update.message.reply_text("У вас нет прав для использования этой функции.")
-        return
-
-    text = update.message.text
-    if text == "Добавить расписание":
-        await update.message.reply_text("Для добавления расписания используйте команду /schedule.")
-    elif text == "Ученики":
-        await students(update, context)
-    elif text == "Просмотр расписания всех":
-        await view_all_schedules(update, context)
-    elif text == "Редактировать расписание":
-        await edit_schedule(update, context)
-    elif text == "Сбросить к стандартному":
-        reset_to_standard_schedule()
-        await update.message.reply_text("Расписание сброшено к стандартному.")
-
-
-def reset_to_standard_schedule():
-    """Сбрасывает расписание на стандартное."""
-    data = load_data()
-    if "standard_schedule" in data:
-        data["schedule"] = data["standard_schedule"]
-        save_data(data)
-
-
-# --- Основная функция ---
 def main():
+    """Запуск бота."""
     init_json_db()
+
+    # Создаём приложение
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # Инициализация планировщика задач
-    scheduler.add_job(
-        send_reminders,
-        CronTrigger(minute="*/10"),  # Запуск каждые 10 минут
-        args=[application]
-    )
-    scheduler.add_job(
-        reset_to_standard_schedule,
-        CronTrigger(day_of_week="sat", hour=23, minute=59)  # Сброс каждую субботу
-    )
-    scheduler.start()  # Запуск планировщика
-
-    # Обработчики
+    # Команды
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("students", students))
     application.add_handler(CommandHandler("view_all_schedules", view_all_schedules))
     application.add_handler(CommandHandler("schedule", add_schedule))
-    application.add_handler(CommandHandler("my_schedule", my_schedule))  # Кнопка "Мое расписание"
-    application.add_handler(MessageHandler(filters.TEXT & filters.User(ADMIN_ID), handle_admin_button))
+    application.add_handler(CommandHandler("reset_schedule", reset_to_standard_schedule))
 
-    logging.info("Бот запущен.")
+    # Напоминания
+    scheduler.add_job(send_reminders, CronTrigger(hour="0-23", minute="*/30", second="0", timezone="Europe/Moscow"))
+
+    # Запуск
     application.run_polling()
-    logging.info(f"Запланированные задачи: {scheduler.get_jobs()}")
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
-
