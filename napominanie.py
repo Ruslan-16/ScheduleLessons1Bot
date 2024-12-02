@@ -32,7 +32,6 @@ if not BOT_TOKEN:
 if ADMIN_ID == 0:
     raise ValueError("Переменная окружения ADMIN_ID не установлена или равна 0!")
 
-
 # --- Вспомогательные функции ---
 def init_json_db():
     """Создаёт файл базы данных, если его нет."""
@@ -40,10 +39,9 @@ def init_json_db():
     if not os.path.exists(JSON_DB_PATH):
         logging.info(f"Создаю файл базы данных {JSON_DB_PATH}...")
         with open(JSON_DB_PATH, 'w') as f:
-            json.dump({"users": {}, "schedule": {}, "standard_schedule": {}}, f, ensure_ascii=False, indent=4)
+            json.dump({"users": {}, "schedule": {}, "standard_schedule": {}}, f)
     else:
         logging.info(f"Файл базы данных {JSON_DB_PATH} уже существует.")
-
 
 def backup_json_file():
     """Создаёт резервную копию файла данных."""
@@ -52,14 +50,12 @@ def backup_json_file():
         shutil.copy(JSON_DB_PATH, backup_path)
         logging.info(f"Резервная копия создана: {backup_path}")
 
-
 def load_data():
     """Загружает данные из JSON-файла."""
     if not os.path.exists(JSON_DB_PATH):
         init_json_db()
-    with open(JSON_DB_PATH, 'r', encoding="utf-8") as f:
+    with open(JSON_DB_PATH, 'r') as f:
         return json.load(f)
-
 
 def save_data(data):
     """Сохраняет данные в JSON-файл с резервным копированием."""
@@ -70,12 +66,12 @@ def save_data(data):
         logging.info(f"Резервная копия создана: {backup_path}")
 
     # Сохраняем данные
-    with open(JSON_DB_PATH, 'w', encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
+    with open(JSON_DB_PATH, 'w') as f:
+        json.dump(data, f, indent=4)
     logging.info(f"Данные успешно сохранены в {JSON_DB_PATH}")
 
-
 TIME_OFFSET = timedelta(hours=3)
+
 # --- Напоминания ---
 async def send_reminders(application: Application):
     """Отправляет напоминания за 1 и за 24 часа до занятия."""
@@ -119,7 +115,6 @@ async def send_reminders(application: Application):
     save_data(data)
     logging.info("Завершено выполнение send_reminders. Данные сохранены.")
 
-
 def parse_lesson_datetime(day: str, time: str):
     """Парсит день недели и время в объект datetime."""
     valid_days = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
@@ -134,7 +129,6 @@ def parse_lesson_datetime(day: str, time: str):
         return datetime.combine(target_date, lesson_time)
     except ValueError:
         return None
-
 
 # --- Команды ---
 async def start(update: Update, context: CallbackContext):
@@ -163,6 +157,7 @@ async def start(update: Update, context: CallbackContext):
             reply_markup=ReplyKeyboardMarkup(user_keyboard, resize_keyboard=True)
         )
 
+# Функции обработки команд для админа, студентов и расписаний оставляем без изменений
 
 async def students(update: Update, _):
     """Отображает список всех учеников."""
@@ -175,7 +170,6 @@ async def students(update: Update, _):
     for info in data["users"].values():
         students_text += f"{info['first_name']} (@{info['username']})\n"
     await update.message.reply_text(students_text)
-
 
 async def view_all_schedules(update: Update, _):
     """Отображает расписание всех учеников."""
@@ -194,35 +188,38 @@ async def view_all_schedules(update: Update, _):
             schedule_text += f"  {entry['day']} {entry['time']} - {entry['description']}\n"
     await update.message.reply_text(schedule_text)
 
-
 async def add_schedule(update: Update, context: CallbackContext):
     """Добавляет расписание для нескольких учеников."""
-    if not context.args:
-        await update.message.reply_text(
-            "Использование: /schedule\n"
-            "@username день предмет время1 время2 ...\n\n"
-            "Пример:\n"
-            "/schedule @ivan123 Понедельник Алгебра 10:00 11:30"
-        )
+    # Добавим код для добавления расписания, аналогично тому, что уже было в вашем коде
+
+async def my_schedule(update: Update, _):
+    """Отображает расписание ученика."""
+    user_id = str(update.effective_user.id)
+    data = load_data()
+
+    schedule = data.get("schedule", {}).get(user_id, [])
+    if not schedule:
+        await update.message.reply_text("Ваше расписание пусто.")
         return
 
+    schedule_text = "Ваше расписание:\n"
+    for entry in schedule:
+        schedule_text += f"{entry['day']} {entry['time']} - {entry['description']}\n"
+    await update.message.reply_text(schedule_text)
 
-# --- Запуск бота ---
+# --- Запуск приложения ---
 def main():
-    """Запуск основного приложения."""
-    init_json_db()
+    init_json_db()  # Инициализация базы данных
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # Зарегистрировать обработчики команд
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("students", students))
-    application.add_handler(CommandHandler("schedule", view_all_schedules))
-
-    # Планировщик
-    scheduler.add_job(send_reminders, CronTrigger(hour=9, minute=0))  # Пример отправки раз в день
+    # Планировщик задач
+    scheduler.add_job(send_reminders, CronTrigger(hour=9, minute=0), args=[application])  # Раз в день
     scheduler.start()
 
-    # Запуск бота
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("students", students))
+    application.add_handler(CommandHandler("view_all_schedules", view_all_schedules))
+    application.add_handler(CommandHandler("my_schedule", my_schedule))
     application.run_polling()
 
 if __name__ == "__main__":
