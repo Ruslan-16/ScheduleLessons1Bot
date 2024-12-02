@@ -7,9 +7,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import shutil
-import pytz
 
-# Константы
 LOG_DIR = "/persistent_data"
 LOG_FILE_PATH = f"{LOG_DIR}/logs.txt"
 
@@ -45,6 +43,7 @@ def init_json_db():
     else:
         logging.info(f"Файл базы данных {JSON_DB_PATH} уже существует.")
 
+
 def backup_json_file():
     """Создаёт резервную копию файла данных."""
     backup_path = f"{JSON_DB_PATH}.backup"
@@ -52,12 +51,14 @@ def backup_json_file():
         shutil.copy(JSON_DB_PATH, backup_path)
         logging.info(f"Резервная копия создана: {backup_path}")
 
+
 def load_data():
     """Загружает данные из JSON-файла."""
     if not os.path.exists(JSON_DB_PATH):
         init_json_db()
     with open(JSON_DB_PATH, 'r') as f:
         return json.load(f)
+
 
 def save_data(data):
     """Сохраняет данные в JSON-файл с резервным копированием."""
@@ -72,6 +73,7 @@ def save_data(data):
         json.dump(data, f, indent=4)
     logging.info(f"Данные успешно сохранены в {JSON_DB_PATH}")
 
+
 TIME_OFFSET = timedelta(hours=3)
 
 # --- Напоминания ---
@@ -79,10 +81,7 @@ async def send_reminders(application: Application):
     """Отправляет напоминания за 1 и за 24 часа до занятия."""
     logging.info("Функция send_reminders запущена.")  # Лог начала выполнения
     data = load_data()
-
-    # Установка временной зоны
-    timezone = pytz.timezone('Europe/Moscow')
-    now = datetime.now(timezone)  # Используем временную зону
+    now = datetime.now() + TIME_OFFSET  # Корректируем текущее время
     logging.info(f"Текущее время (с учетом смещения): {now}")
 
     for user_id, schedule in data.get("schedule", {}).items():
@@ -120,6 +119,7 @@ async def send_reminders(application: Application):
     save_data(data)
     logging.info("Завершено выполнение send_reminders. Данные сохранены.")
 
+
 def parse_lesson_datetime(day: str, time: str):
     """Парсит день недели и время в объект datetime."""
     valid_days = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
@@ -135,6 +135,7 @@ def parse_lesson_datetime(day: str, time: str):
     except ValueError:
         return None
 
+
 # --- Команды ---
 async def start(update: Update, context: CallbackContext):
     """Обрабатывает команду /start."""
@@ -145,7 +146,6 @@ async def start(update: Update, context: CallbackContext):
     data["users"][str(user.id)] = {"username": user.username, "first_name": user.first_name}
     save_data(data)
 
-    # Позиционируем пользователя как администратора или обычного пользователя
     if user.id == ADMIN_ID:
         admin_keyboard = [
             ["Добавить расписание"],
@@ -163,6 +163,7 @@ async def start(update: Update, context: CallbackContext):
             reply_markup=ReplyKeyboardMarkup(user_keyboard, resize_keyboard=True)
         )
 
+
 async def students(update: Update, _):
     """Отображает список всех учеников."""
     data = load_data()
@@ -174,6 +175,7 @@ async def students(update: Update, _):
     for info in data["users"].values():
         students_text += f"{info['first_name']} (@{info['username']})\n"
     await update.message.reply_text(students_text)
+
 
 async def view_all_schedules(update: Update, _):
     """Отображает расписание всех учеников."""
@@ -191,6 +193,7 @@ async def view_all_schedules(update: Update, _):
         for entry in schedule:
             schedule_text += f"  {entry['day']} {entry['time']} - {entry['description']}\n"
     await update.message.reply_text(schedule_text)
+
 
 async def add_schedule(update: Update, context: CallbackContext):
     """Добавляет расписание для нескольких учеников."""
@@ -249,23 +252,41 @@ async def add_schedule(update: Update, context: CallbackContext):
     if messages:
         await update.message.reply_text("\n".join(messages))
 
-# --- Основная настройка ---
+
+async def reset_to_standard_schedule(update: Update, _):
+    """Сброс расписания к стандартному."""
+    data = load_data()
+    standard_schedule = data.get("standard_schedule", {})
+
+    if not standard_schedule:
+        await update.message.reply_text("Стандартное расписание не найдено.")
+        return
+
+    data["schedule"] = standard_schedule
+    save_data(data)
+    await update.message.reply_text("Расписание сброшено к стандартному.")
+
+
 def main():
     """Запуск бота."""
     init_json_db()
+
+    # Создаём приложение
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # Регистрируем обработчики
+    # Команды
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("students", students))
-    application.add_handler(CommandHandler("schedule", add_schedule))
     application.add_handler(CommandHandler("view_all_schedules", view_all_schedules))
+    application.add_handler(CommandHandler("schedule", add_schedule))
+    application.add_handler(CommandHandler("reset_schedule", reset_to_standard_schedule))
 
-    # Запуск планировщика для напоминаний
-    scheduler.add_job(send_reminders, CronTrigger(minute="0", hour="9-17", day_of_week="mon-fri"), args=[application])
+    # Напоминания
+    scheduler.add_job(send_reminders, CronTrigger(hour="0-23", minute="*/30", second="0", timezone="Europe/Moscow"))
 
-    # Запуск бота
+    # Запуск
     application.run_polling()
+
 
 if __name__ == '__main__':
     main()
