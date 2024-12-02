@@ -11,6 +11,7 @@ import shutil
 LOG_DIR = "/persistent_data"
 LOG_FILE_PATH = f"{LOG_DIR}/logs.txt"
 
+
 # Убедимся, что директория существует
 os.makedirs(LOG_DIR, exist_ok=True)
 
@@ -18,6 +19,9 @@ os.makedirs(LOG_DIR, exist_ok=True)
 if not os.path.exists(LOG_FILE_PATH):
     with open(LOG_FILE_PATH, 'w') as f:
         pass  # Создаем пустой файл, если он отсутствует
+    print(f"Файл логов создан: {LOG_FILE_PATH}")  # Отладочное сообщение
+else:
+    print(f"Файл логов уже существует: {LOG_FILE_PATH}")  # Отладочное сообщение
 
 # Настройка логирования
 logging.basicConfig(
