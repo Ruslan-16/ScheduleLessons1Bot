@@ -2,7 +2,7 @@ import os
 import json
 import logging
 from datetime import datetime, timedelta
-from telegram import Update, ReplyKeyboardMarkup
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -142,24 +142,23 @@ async def start(update: Update, context: CallbackContext):
 
     if user.id == ADMIN_ID:
         admin_keyboard = [
-            ["Добавить расписание"],
-            ["Ученики", "Просмотр расписания всех"],
-            ["Редактировать расписание", "Сбросить к стандартному"]
+            [KeyboardButton("Добавить расписание")],
+            [KeyboardButton("Ученики"), KeyboardButton("Просмотр расписания всех")],
+            [KeyboardButton("Редактировать расписание"), KeyboardButton("Сбросить к стандартному")]
         ]
         await update.message.reply_text(
             "Вы зарегистрированы как администратор! Выберите команду:",
             reply_markup=ReplyKeyboardMarkup(admin_keyboard, resize_keyboard=True)
         )
     else:
-        user_keyboard = [["Мое расписание"]]
+        user_keyboard = [[KeyboardButton("Мое расписание")]]
         await update.message.reply_text(
             "Вы зарегистрированы! Вы будете получать напоминания о занятиях.",
             reply_markup=ReplyKeyboardMarkup(user_keyboard, resize_keyboard=True)
         )
 
-# Функции обработки команд для админа, студентов и расписаний оставляем без изменений
-
-async def students(update: Update, _):
+# Обработчик для кнопки "Ученики"
+async def students(update: Update, context: CallbackContext):
     """Отображает список всех учеников."""
     data = load_data()
     if not data["users"]:
@@ -171,7 +170,17 @@ async def students(update: Update, _):
         students_text += f"{info['first_name']} (@{info['username']})\n"
     await update.message.reply_text(students_text)
 
-async def view_all_schedules(update: Update, _):
+# Обработчик для кнопки "Добавить расписание"
+async def add_schedule(update: Update, context: CallbackContext):
+    """Добавляет расписание для пользователя."""
+    user = update.effective_user
+    await update.message.reply_text(
+        "Для добавления расписания, отправьте сообщение в формате: \n\n"
+        "'Понедельник 09:00 Математика'"
+    )
+
+# Обработчик для кнопки "Просмотр расписания всех"
+async def view_all_schedules(update: Update, context: CallbackContext):
     """Отображает расписание всех учеников."""
     data = load_data()
     if not data["schedule"]:
@@ -188,26 +197,29 @@ async def view_all_schedules(update: Update, _):
             schedule_text += f"  {entry['day']} {entry['time']} - {entry['description']}\n"
     await update.message.reply_text(schedule_text)
 
-async def add_schedule(update: Update, context: CallbackContext):
-    """Добавляет расписание для нескольких учеников."""
-    # Добавим код для добавления расписания, аналогично тому, что уже было в вашем коде
-
+# Функции для других кнопок и команд, например для отображения расписания пользователя и т.д.
 async def my_schedule(update: Update, _):
     """Отображает расписание ученика."""
-    user_id = str(update.effective_user.id)
-    data = load_data()
+    user_id = str(update.effective_user.id)  # Получаем ID пользователя
+    data = load_data()  # Загружаем данные
 
+    # Получаем расписание для данного пользователя
     schedule = data.get("schedule", {}).get(user_id, [])
+
     if not schedule:
         await update.message.reply_text("Ваше расписание пусто.")
         return
 
+    # Формируем сообщение с расписанием
     schedule_text = "Ваше расписание:\n"
     for entry in schedule:
         schedule_text += f"{entry['day']} {entry['time']} - {entry['description']}\n"
+
+    # Отправляем сообщение
     await update.message.reply_text(schedule_text)
 
-# --- Запуск приложения ---
+
+# --- Основная функция ---
 def main():
     init_json_db()  # Инициализация базы данных
     application = Application.builder().token(BOT_TOKEN).build()
@@ -219,8 +231,12 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("students", students))
     application.add_handler(CommandHandler("view_all_schedules", view_all_schedules))
-    application.add_handler(CommandHandler("my_schedule", my_schedule))
+    application.add_handler(CommandHandler("my_schedule", my_schedule))  # Эта функция должна быть добавлена
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, add_schedule))  # Для добавления расписания
     application.run_polling()
+
 
 if __name__ == "__main__":
     main()
+
+
