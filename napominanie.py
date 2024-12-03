@@ -1,3 +1,4 @@
+import asyncio
 import os
 import json
 import logging
@@ -212,41 +213,64 @@ async def view_all_schedules(update: Update, context: CallbackContext):
     await update.message.reply_text(schedule_text)
 
 # --- Напоминания ---
-async def send_reminder(update: Update, context: CallbackContext):
-    """Отправляет напоминание о занятии через 1 час до начала."""
+async def send_reminder(application: Application):
+    """
+    Отправляет напоминания о занятиях за 1 час до их начала.
+    Функция вызывается планировщиком.
+    """
     data = load_data()
     now = datetime.now()
 
-    for user_id, schedule in data["schedule"].items():
+    for user_id, schedule in data.get("schedule", {}).items():
         for lesson in schedule:
-            lesson_time = datetime.strptime(f"{lesson['day']} {lesson['time']}", "%A %H:%M")
-            if now <= lesson_time <= (lesson_time + timedelta(hours=1)):
-                if not lesson["reminder_sent_1h"]:
-                    user_info = data["users"].get(str(user_id))
-                    if user_info:
-                        user_username = user_info["username"]
-                        reminder_text = f"Напоминаем вам о занятии по {lesson['description']} через 1 час!"
-                        await context.bot.send_message(user_username, reminder_text)
+            try:
+                # Парсим дату и время урока
+                lesson_time = datetime.strptime(f"{lesson['day']} {lesson['time']}", "%A %H:%M")
+                # Проверяем, нужно ли отправлять напоминание за 1 час
+                if lesson_time - timedelta(hours=1) <= now <= lesson_time:
+                    if not lesson.get("reminder_sent_1h", False):
+                        user_info = data["users"].get(user_id, {})
+                        username = user_info.get("username", "Пользователь")
+                        reminder_text = (
+                            f"Напоминание: через 1 час у вас занятие по {lesson['description']} "
+                            f"в {lesson['time']} ({lesson['day']})."
+                        )
+
+                        # Отправляем сообщение пользователю
+                        await application.bot.send_message(chat_id=user_id, text=reminder_text)
+
+                        # Отмечаем, что напоминание отправлено
                         lesson["reminder_sent_1h"] = True
-                        save_data(data)
+                        save_data(data)  # Сохраняем изменения
+            except Exception as e:
+                logging.error(f"Ошибка при обработке напоминания для пользователя {user_id}: {e}")
 
-# --- Планировщик ---
 def setup_scheduler(application: Application):
-    """Настройка планировщика для напоминаний о занятиях."""
-    scheduler.add_job(send_reminder, IntervalTrigger(minutes=10), args=[None, application])
-    scheduler.start()
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(
+        send_reminder,  # Указываем функцию для выполнения
+        IntervalTrigger(minutes=10),  # Интервал выполнения задания
+        args=[application],  # Передаем application в функцию
+    )
+    scheduler.start()  # Запускаем планировщик
 
-# --- Основная функция и запуск ---
 async def main():
+    """Основная функция запуска бота и планировщика."""
+    # Создаем приложение
     application = Application.builder().token(BOT_TOKEN).build()
+
+    # Настройка планировщика
     setup_scheduler(application)
 
+    # Регистрируем обработчики команд
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("students", students))
     application.add_handler(CommandHandler("add_schedule", add_schedule))
     application.add_handler(CommandHandler("view_schedule", view_all_schedules))
 
+    # Запускаем long polling
     await application.run_polling()
+
 
 if __name__ == '__main__':
     import asyncio
