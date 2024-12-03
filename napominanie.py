@@ -2,12 +2,35 @@ import os
 import json
 import logging
 from datetime import datetime, timedelta
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.interval import IntervalTrigger
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
-import shutil
+import boto3
+from botocore.exceptions import NoCredentialsError, PartialCredentialsError, EndpointConnectionError
+from dotenv import load_dotenv
 
+# Загружаем переменные из .env
+load_dotenv()
+
+# Переменные окружения
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = os.getenv("ADMIN_ID")
+S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY")
+S3_SECRET_KEY = os.getenv("S3_SECRET_KEY")
+S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
+S3_ENDPOINT_URL = os.getenv("S3_ENDPOINT_URL")
+
+# Инициализация клиента для S3
+s3_client = boto3.client(
+    's3',
+    aws_access_key_id=S3_ACCESS_KEY,
+    aws_secret_access_key=S3_SECRET_KEY,
+    endpoint_url=S3_ENDPOINT_URL
+)
+
+# Путь к файлу данных на S3
+S3_JSON_DB_PATH = "bot_data/users.json"
 LOG_DIR = "/persistent_data"
 LOG_FILE_PATH = f"{LOG_DIR}/logs.txt"
 
@@ -22,8 +45,6 @@ logging.basicConfig(
 )
 
 # Переменные окружения
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 JSON_DB_PATH = os.getenv("JSON_DB_PATH", "/persistent_data/users.json")
 scheduler = AsyncIOScheduler()
 
@@ -44,17 +65,30 @@ def init_json_db():
         logging.info(f"Файл базы данных {JSON_DB_PATH} уже существует.")
 
 def load_data():
-    """Загружает данные из JSON-файла."""
-    if not os.path.exists(JSON_DB_PATH):
-        init_json_db()
-    with open(JSON_DB_PATH, 'r') as f:
-        return json.load(f)
+    """Загружает данные из JSON-файла с S3."""
+    try:
+        response = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=S3_JSON_DB_PATH)
+        data = json.loads(response['Body'].read().decode())
+        return data
+    except s3_client.exceptions.NoSuchKey:
+        logging.warning(f"Файл {S3_JSON_DB_PATH} не найден в S3, создаю новый.")
+        return {"users": {}, "schedule": {}, "standard_schedule": {}}
+    except (NoCredentialsError, PartialCredentialsError, EndpointConnectionError) as e:
+        logging.error(f"Ошибка подключения к S3: {e}")
+        raise
+    except Exception as e:
+        logging.error(f"Неизвестная ошибка при загрузке данных из S3: {e}")
+        raise
 
 def save_data(data):
-    """Сохраняет данные в JSON-файл."""
-    with open(JSON_DB_PATH, 'w') as f:
-        json.dump(data, f, indent=4)
-    logging.info(f"Данные успешно сохранены в {JSON_DB_PATH}")
+    """Сохраняет данные в JSON-файл на S3."""
+    try:
+        s3_client.put_object(Bucket=S3_BUCKET_NAME, Key=S3_JSON_DB_PATH, Body=json.dumps(data, indent=4))
+        logging.info(f"Данные успешно сохранены в S3: {S3_JSON_DB_PATH}")
+    except (NoCredentialsError, PartialCredentialsError, EndpointConnectionError) as e:
+        logging.error(f"Ошибка подключения к S3: {e}")
+    except Exception as e:
+        logging.error(f"Неизвестная ошибка при сохранении данных в S3: {e}")
 
 # --- Команды ---
 async def start(update: Update, context: CallbackContext):
@@ -83,7 +117,7 @@ async def start(update: Update, context: CallbackContext):
             reply_markup=ReplyKeyboardMarkup(user_keyboard, resize_keyboard=True)
         )
 
-async def students(update: Update, _):
+async def students(update: Update, context: CallbackContext):
     """Отображает список всех учеников."""
     data = load_data()
     if not data["users"]:
@@ -107,10 +141,9 @@ async def add_schedule(update: Update, context: CallbackContext):
         return
 
     lines = " ".join(context.args).split("\n")
-    data = load_data()
+    data = load_data()  # Загружаем данные с S3
     messages = []
 
-    # Проверка наличия ключа schedule
     if "schedule" not in data:
         logging.warning("Ключ 'schedule' отсутствует, создаю...")
         data["schedule"] = {}
@@ -141,7 +174,6 @@ async def add_schedule(update: Update, context: CallbackContext):
         data["schedule"].setdefault(user_id, [])
         for time in times:
             try:
-                # Проверка формата времени
                 datetime.strptime(time, "%H:%M")
                 data["schedule"][user_id].append({
                     "day": day,
@@ -157,15 +189,13 @@ async def add_schedule(update: Update, context: CallbackContext):
 
         messages.append(f"Добавлено: {username} - {day} - {subject} в {', '.join(times)}")
 
-    # Сохранение данных
+    # Сохраняем данные в S3
     save_data(data)
-    logging.info(f"Данные успешно сохранены: {data}")
 
     # Отправляем сообщение, что расписание добавлено
     await update.message.reply_text("\n".join(messages))
 
-
-async def view_all_schedules(update: Update, _):
+async def view_all_schedules(update: Update, context: CallbackContext):
     """Отображает расписание всех учеников."""
     data = load_data()
     if not data["schedule"]:
@@ -175,119 +205,49 @@ async def view_all_schedules(update: Update, _):
     schedule_text = "Расписание всех учеников:\n"
     for user_id, schedule in data["schedule"].items():
         user_info = data["users"].get(user_id, {})
-        username = user_info.get("username", "Неизвестно")
-        first_name = user_info.get("first_name", "Неизвестно")
-        schedule_text += f"{first_name} (@{username}):\n"
+        username = user_info.get("username", "Неизвестный пользователь")
+        schedule_text += f"{username}:\n"
         for entry in schedule:
             schedule_text += f"  {entry['day']} {entry['time']} - {entry['description']}\n"
     await update.message.reply_text(schedule_text)
 
-
-async def reset_to_standard_schedule():
-    """Сбрасывает расписание на стандартное."""
+# --- Напоминания ---
+async def send_reminder(update: Update, context: CallbackContext):
+    """Отправляет напоминание о занятии через 1 час до начала."""
     data = load_data()
-    if "standard_schedule" in data:
-        data["schedule"] = data["standard_schedule"]
-        save_data(data)
+    now = datetime.now()
 
-async def handle_admin_button(update: Update, context: CallbackContext):
-    """Обрабатывает нажатие кнопок администратора."""
-    user = update.effective_user
-    if user.id != ADMIN_ID:
-        await update.message.reply_text("У вас нет прав для использования этой функции.")
-        return
+    for user_id, schedule in data["schedule"].items():
+        for lesson in schedule:
+            lesson_time = datetime.strptime(f"{lesson['day']} {lesson['time']}", "%A %H:%M")
+            if now <= lesson_time <= (lesson_time + timedelta(hours=1)):
+                if not lesson["reminder_sent_1h"]:
+                    user_info = data["users"].get(str(user_id))
+                    if user_info:
+                        user_username = user_info["username"]
+                        reminder_text = f"Напоминаем вам о занятии по {lesson['description']} через 1 час!"
+                        await context.bot.send_message(user_username, reminder_text)
+                        lesson["reminder_sent_1h"] = True
+                        save_data(data)
 
-    text = update.message.text
-    if text == "Ученики":
-        await students(update, context)
-    elif text == "Добавить расписание":
-        await add_schedule(update, context)
-    elif text == "Просмотр расписания":
-        await view_all_schedules(update, context)
-    elif text == "Сбросить расписание":
-        await reset_to_standard_schedule()
-        await update.message.reply_text("Расписание сброшено к стандартному.")
+# --- Планировщик ---
+def setup_scheduler(application: Application):
+    """Настройка планировщика для напоминаний о занятиях."""
+    scheduler.add_job(send_reminder, IntervalTrigger(minutes=10), args=[None, application])
+    scheduler.start()
 
-
-async def add_schedule_for_students(update: Update, context: CallbackContext):
-    """Добавляет расписание для нескольких учеников."""
-    data = load_data()
-    user = update.effective_user
-
-    # Проверка на права администратора
-    if user.id != ADMIN_ID:
-        await update.message.reply_text("У вас нет прав для использования этой функции.")
-        return
-
-    # Проверяем, что формат правильный
-    if len(context.args) < 5:
-        await update.message.reply_text(
-            "Неверный формат. Пример использования: /schedule @username Понедельник Математика 10:00 14:00, @username2 Вторник Физика 9:00 12:00"
-        )
-        return
-
-    # Итерируем по списку аргументов
-    added_count = 0
-    for i in range(0, len(context.args), 5):  # Шаг 5, чтобы обрабатывать блоки данных для каждого ученика
-        if i + 4 >= len(context.args):
-            break  # Не хватает данных для обработки
-
-        username = context.args[i]  # @username
-        day = context.args[i + 1]  # День недели (например, Понедельник)
-        subject = context.args[i + 2]  # Название предмета (например, Математика)
-        start_time = context.args[i + 3]  # Время начала (например, 10:00)
-        end_time = context.args[i + 4]  # Время конца (например, 14:00)
-
-        # Находим ученика по username
-        student = None
-        for user_id, info in data["users"].items():
-            if info["username"] == username:
-                student = user_id
-                break
-
-        if not student:
-            await update.message.reply_text(f"Ученик с username @{username} не найден.")
-            continue
-
-        # Добавляем расписание
-        schedule_entry = {
-            "day": day,
-            "subject": subject,
-            "time": f"{start_time} - {end_time}",
-            "description": f"{subject} ({start_time} - {end_time})"
-        }
-
-        # Обновляем расписание для этого ученика
-        if student not in data["schedule"]:
-            data["schedule"][student] = []
-
-        data["schedule"][student].append(schedule_entry)
-        added_count += 1
-
-    # Сохраняем данные
-    save_data(data)
-
-    # Ответ пользователю
-    if added_count > 0:
-        await update.message.reply_text(f"Добавлено {added_count} расписаний.")
-    else:
-        await update.message.reply_text("Не удалось добавить расписания. Пожалуйста, проверьте ввод.")
-
-
-# --- Основная функция ---
-def main():
-    init_json_db()
+# --- Основная функция и запуск ---
+async def main():
     application = Application.builder().token(BOT_TOKEN).build()
+    setup_scheduler(application)
 
-    # Обработчики
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & filters.User(ADMIN_ID), handle_admin_button))
     application.add_handler(CommandHandler("students", students))
-    application.add_handler(CommandHandler("view_all_schedules", view_all_schedules))
-    application.add_handler(CommandHandler("schedule", add_schedule_for_students))
+    application.add_handler(CommandHandler("add_schedule", add_schedule))
+    application.add_handler(CommandHandler("view_schedule", view_all_schedules))
 
-    logging.info("Бот запущен.")
-    application.run_polling()
+    await application.run_polling()
 
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    import asyncio
+    asyncio.run(main())
