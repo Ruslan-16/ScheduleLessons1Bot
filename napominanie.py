@@ -1,15 +1,23 @@
 import asyncio
+import locale
 import os
 import json
 import logging
 from datetime import datetime, timedelta
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.interval import IntervalTrigger
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 import boto3
 from botocore.exceptions import NoCredentialsError, PartialCredentialsError, EndpointConnectionError
 from dotenv import load_dotenv
+import asyncio
+from telegram.ext import Application
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.interval import IntervalTrigger
+# Устанавливаем локаль для работы с русскими названиями дней недели
+try:
+    locale.setlocale(locale.LC_TIME, "ru_RU.UTF-8")
+except locale.Error:
+    print("Локализация 'ru_RU.UTF-8' не поддерживается на этом сервере.")
 
 # Загружаем переменные из .env
 load_dotenv()
@@ -214,64 +222,67 @@ async def view_all_schedules(update: Update, context: CallbackContext):
 
 # --- Напоминания ---
 async def send_reminder(application: Application):
-    """
-    Отправляет напоминания о занятиях за 1 час до их начала.
-    Функция вызывается планировщиком.
-    """
+    """Отправляет напоминания за 1 час до занятия."""
     data = load_data()
     now = datetime.now()
 
     for user_id, schedule in data.get("schedule", {}).items():
         for lesson in schedule:
             try:
+                # Проверяем наличие обязательных ключей в уроке
+                if "day" not in lesson or "time" not in lesson or "description" not in lesson:
+                    logging.warning(f"Пропущен урок без необходимых данных: {lesson}")
+                    continue
+
                 # Парсим дату и время урока
                 lesson_time = datetime.strptime(f"{lesson['day']} {lesson['time']}", "%A %H:%M")
+
                 # Проверяем, нужно ли отправлять напоминание за 1 час
                 if lesson_time - timedelta(hours=1) <= now <= lesson_time:
-                    if not lesson.get("reminder_sent_1h", False):
-                        user_info = data["users"].get(user_id, {})
+                    if not lesson.get("reminder_sent_1h", False):  # Напоминание еще не отправлено
+                        user_info = data["users"].get(str(user_id), {})  # user_id как строка
                         username = user_info.get("username", "Пользователь")
+
+                        # Формируем текст напоминания
                         reminder_text = (
                             f"Напоминание: через 1 час у вас занятие по {lesson['description']} "
                             f"в {lesson['time']} ({lesson['day']})."
                         )
 
-                        # Отправляем сообщение пользователю
+                        # Отправляем сообщение
                         await application.bot.send_message(chat_id=user_id, text=reminder_text)
 
-                        # Отмечаем, что напоминание отправлено
+                        # Помечаем напоминание как отправленное
                         lesson["reminder_sent_1h"] = True
                         save_data(data)  # Сохраняем изменения
+
+                        logging.info(f"Напоминание отправлено пользователю {user_id}: {reminder_text}")
+            except ValueError as ve:
+                logging.error(f"Ошибка парсинга времени для урока: {lesson}. Ошибка: {ve}")
             except Exception as e:
-                logging.error(f"Ошибка при обработке напоминания для пользователя {user_id}: {e}")
+                logging.error(f"Ошибка при отправке напоминания для пользователя {user_id}: {e}")
+
+    print("Напоминание завершено!")
+
 
 def setup_scheduler(application: Application):
+    """Настройка планировщика."""
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(
-        send_reminder,  # Указываем функцию для выполнения
-        IntervalTrigger(minutes=10),  # Интервал выполнения задания
-        args=[application],  # Передаем application в функцию
-    )
-    scheduler.start()  # Запускаем планировщик
+    scheduler.add_job(send_reminder, IntervalTrigger(minutes=10), args=[application])
+    scheduler.start()
 
 async def main():
-    """Основная функция запуска бота и планировщика."""
-    # Создаем приложение
-    application = Application.builder().token(BOT_TOKEN).build()
+    application = Application.builder().token("your_bot_token").build()
 
     # Настройка планировщика
     setup_scheduler(application)
 
-    # Регистрируем обработчики команд
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("students", students))
-    application.add_handler(CommandHandler("add_schedule", add_schedule))
-    application.add_handler(CommandHandler("view_schedule", view_all_schedules))
-
-    # Запускаем long polling
+    # Запуск бота
     await application.run_polling()
 
-
 if __name__ == '__main__':
-    import asyncio
-    asyncio.run(main())
+    loop = asyncio.get_event_loop()
+    try:
+        loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        print("Остановка бота")
