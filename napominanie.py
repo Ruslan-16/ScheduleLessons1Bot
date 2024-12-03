@@ -18,10 +18,11 @@ load_dotenv()
 # Переменные окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = os.getenv("ADMIN_ID")
-S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY")
-S3_SECRET_KEY = os.getenv("S3_SECRET_KEY")
-S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
-S3_ENDPOINT_URL = os.getenv("S3_ENDPOINT_URL")
+S3_ACCESS_KEY = "0CLS24Z09YQL8UJLQCQQ"
+S3_SECRET_KEY = '9GcBHRJY97YmWCHe0gXPrJnKgsFC8vqiyoT5GZPL'
+S3_BUCKET_NAME = '8df8e63e-raspisanie'
+S3_ENDPOINT_URL = 'https://s3.timeweb.cloud'
+
 
 # Настройка клиента S3
 s3_client = boto3.client(
