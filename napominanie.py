@@ -4,6 +4,8 @@ import boto3
 import json
 import os
 import logging
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 # Настройки для S3
 S3_ACCESS_KEY = os.getenv('S3_ACCESS_KEY', '0CLS24Z09YQL8UJLQCQQ')
@@ -21,9 +23,15 @@ s3_client = boto3.client(
 # Настройки для Telegram
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
+if not BOT_TOKEN:
+    raise ValueError("Не указан токен бота. Убедитесь, что переменная окружения BOT_TOKEN задана.")
+
 # Включаем логирование
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Исполнитель для асинхронной работы с S3
+executor = ThreadPoolExecutor()
 
 # Функция для старта бота
 async def start(update: Update, context: CallbackContext):
@@ -53,7 +61,12 @@ async def button(update: Update, context: CallbackContext):
     elif query.data == 'edit_schedule':
         await query.edit_message_text(text="Вы выбрали: Редактировать расписание.")
     elif query.data == 'view_schedule':
-        await query.edit_message_text(text="Вы выбрали: Просмотр расписания.")
+        schedule = await asyncio.get_event_loop().run_in_executor(executor, get_schedule_from_s3)
+        if schedule:
+            schedule_text = json.dumps(schedule, indent=4, ensure_ascii=False)
+            await query.edit_message_text(text=f"Текущее расписание:\n{schedule_text}")
+        else:
+            await query.edit_message_text(text="Расписание не найдено.")
     elif query.data == 'reset_editing':
         await query.edit_message_text(text="Вы выбрали: Сброс редактирования.")
 
@@ -87,5 +100,12 @@ async def main():
     await application.run_polling()
 
 if __name__ == '__main__':
-    import asyncio
-    asyncio.run(main())
+    # Проверяем, поддерживает ли среда asyncio.run
+    try:
+        asyncio.run(main())
+    except RuntimeError as e:
+        if str(e).startswith("Cannot close a running event loop"):
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(main())
+        else:
+            raise
