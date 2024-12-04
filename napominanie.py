@@ -19,7 +19,7 @@ s3_client = boto3.client(
 )
 
 # Настройки для Telegram
-TOKEN = os.getenv("TOKEN")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 # Включаем логирование
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -76,7 +76,7 @@ def save_schedule_to_s3(schedule_data):
 
 # Главная функция для запуска бота
 async def main():
-    application = Application.builder().token(TOKEN).build()
+    application = Application.builder().token(BOT_TOKEN).build()
 
     # Обработчики команд
     application.add_handler(CommandHandler("start", start))
