@@ -1,3 +1,4 @@
+from aiohttp import web
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, CallbackContext
 import boto3
@@ -87,8 +88,13 @@ def save_schedule_to_s3(schedule_data):
     except Exception as e:
         logger.error(f"Ошибка при сохранении расписания в S3: {e}")
 
-# Главная функция для запуска бота
+# Функция для проверки состояния (health-check)
+async def health_check(request):
+    return web.Response(text="OK", status=200)
+
+# Главная функция для запуска бота и HTTP-сервера
 async def main():
+    # Telegram bot application
     application = Application.builder().token(BOT_TOKEN).build()
 
     # Обработчики команд
@@ -96,16 +102,18 @@ async def main():
     application.add_handler(CommandHandler("menu", show_buttons))
     application.add_handler(CallbackQueryHandler(button))
 
-    # Запуск бота
-    await application.run_polling()
+    # Запускаем бота в отдельной задаче
+    bot_task = asyncio.create_task(application.run_polling())
 
-if __name__ == '__main__':
-    # Проверяем, поддерживает ли среда asyncio.run
-    try:
-        asyncio.run(main())
-    except RuntimeError as e:
-        if str(e).startswith("Cannot close a running event loop"):
-            loop = asyncio.get_event_loop()
-            loop.run_until_complete(main())
-        else:
-            raise
+    # Настраиваем HTTP-сервер
+    app = web.Application()
+    app.router.add_get('/health', health_check)  # Эндпоинт проверки состояния
+
+    # Запускаем HTTP-сервер
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', 5000)  # Запуск на порту 5000
+    await site.start()
+
+    # Ожидаем завершения задачи бота
+    await bot_task
