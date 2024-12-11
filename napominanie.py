@@ -29,9 +29,7 @@ AWS_SECRET_KEY = os.getenv("AWS_SECRET_KEY", "Ваш_Secret_Key")
 # Переменные окружения для бота
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
-print("AWS_ACCESS_KEY:", os.getenv("AWS_ACCESS_KEY"))
-print("AWS_SECRET_KEY:", os.getenv("AWS_SECRET_KEY"))
-print("BOT_TOKEN:", os.getenv("BOT_TOKEN"))
+
 # Временная зона
 TIME_OFFSET = timedelta(hours=3)
 
