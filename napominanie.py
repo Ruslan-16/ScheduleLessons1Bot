@@ -6,9 +6,11 @@ from datetime import datetime, timedelta
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
 import boto3
 from botocore.client import Config
+from dotenv import load_dotenv
+
+load_dotenv(dotenv_path="документы.env")
 
 # --- Константы и настройки ---
 LOG_DIR = "/persistent_data"
@@ -21,10 +23,15 @@ S3_ENDPOINT = "https://s3.timeweb.cloud"
 AWS_ACCESS_KEY = os.getenv("AWS_ACCESS_KEY", "Ваш_Access_Key")
 AWS_SECRET_KEY = os.getenv("AWS_SECRET_KEY", "Ваш_Secret_Key")
 
+
+# Проверьте переменные
+
 # Переменные окружения для бота
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
-
+print("AWS_ACCESS_KEY:", os.getenv("AWS_ACCESS_KEY"))
+print("AWS_SECRET_KEY:", os.getenv("AWS_SECRET_KEY"))
+print("BOT_TOKEN:", os.getenv("BOT_TOKEN"))
 # Временная зона
 TIME_OFFSET = timedelta(hours=3)
 
