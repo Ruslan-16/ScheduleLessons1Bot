@@ -138,58 +138,79 @@ async def start(update: Update, context: CallbackContext):
 
 
 async def schedule(update: Update, context: CallbackContext):
-    """Обрабатывает команду /schedule."""
-    try:
-        # Логируем команду для проверки
-        logging.info(f"Получена команда /schedule: {update.message.text}")
-
-        # Получаем аргументы команды
-        args = context.args
-        if len(args) < 3:
-            await update.message.reply_text(
-                "Некорректный формат. Используйте:\n"
-                "`/schedule @username день предмет время1 время2 ...`\n\n"
-                "Пример:\n"
-                "`/schedule @ivan123 Понедельник Английский 10:00 14:00`",
-                parse_mode="Markdown"
-            )
-            return
-
-        # Разбираем аргументы
-        username, day, subject, *times = args
-        if not times:
-            await update.message.reply_text("Укажите хотя бы одно время.")
-            return
-
-        # Загружаем базу данных
-        data = load_data()
-
-        # Проверяем наличие пользователя
-        user_id = None
-        for uid, user_info in data["users"].items():
-            if user_info.get("username") == username.lstrip('@'):
-                user_id = uid
-                break
-
-        if not user_id:
-            await update.message.reply_text(f"Пользователь {username} не найден.")
-            return
-
-        # Добавляем запись в расписание
-        entry = {"day": day, "description": subject, "time": ", ".join(times)}
-        if user_id not in data["schedule"]:
-            data["schedule"][user_id] = []
-        data["schedule"][user_id].append(entry)
-
-        # Сохраняем изменения
-        save_data(data)
+    """Добавляет расписание для одного или нескольких учеников."""
+    if not context.args:
         await update.message.reply_text(
-            f"Расписание для {username} обновлено:\n{day} {', '.join(times)} - {subject}"
+            "Использование: /schedule\n"
+            "@username день предмет время1 время2 ...\n\n"
+            "Пример:\n"
+            "/schedule @ivan123 Понедельник Математика 10:00 14:00"
         )
+        return
 
-    except Exception as e:
-        logging.error(f"Ошибка в обработчике /schedule: {e}")
-        await update.message.reply_text("Произошла ошибка.")
+    # Получаем строки ввода (могут быть разделены по строкам, если пользователь ввёл много)
+    lines = " ".join(context.args).split("\n")
+    data = load_data()
+    messages = []
+
+    # Проверка наличия ключа 'schedule'
+    if "schedule" not in data:
+        logging.warning("Ключ 'schedule' отсутствует, создаю...")
+        data["schedule"] = {}
+
+    # Список валидных дней недели
+    valid_days = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
+
+    # Обрабатываем каждую строку из команды
+    for line in lines:
+        parts = line.strip().split()
+        if len(parts) < 4:
+            messages.append(f"Ошибка: недостаточно данных в строке: {line}")
+            logging.warning(f"Недостаточно данных в строке: {line}")
+            continue
+
+        username, day, subject, *times = parts
+
+        # Проверяем день недели
+        if day not in valid_days:
+            messages.append(f"Ошибка: некорректный день недели: {day}")
+            logging.warning(f"Некорректный день недели: {day}")
+            continue
+
+        # Проверяем, существует ли пользователь
+        user_id = next(
+            (uid for uid, info in data["users"].items() if info["username"] == username.lstrip('@')),
+            None
+        )
+        if not user_id:
+            messages.append(f"Ошибка: пользователь {username} не найден.")
+            logging.warning(f"Пользователь {username} не найден.")
+            continue
+
+        # Добавляем расписание для найденного пользователя
+        data["schedule"].setdefault(user_id, [])
+        for time in times:
+            try:
+                # Проверка формата времени
+                datetime.strptime(time, "%H:%M")
+                data["schedule"][user_id].append({
+                    "day": day,
+                    "time": time,
+                    "description": subject,
+                    "reminder_sent_1h": False,
+                    "reminder_sent_24h": False
+                })
+            except ValueError:
+                messages.append(f"Ошибка: некорректный формат времени {time} для {username}")
+                logging.warning(f"Некорректный формат времени {time} для {username}")
+                continue
+
+        messages.append(f"Добавлено: {username} - {day} - {subject} в {', '.join(times)}")
+
+    # Сохраняем обновлённые данные
+    save_data(data)
+    logging.info(f"Данные сохранены: {data}")
+    await update.message.reply_text("\n".join(messages))
 
 
 async def unknown_command(update: Update, _):
