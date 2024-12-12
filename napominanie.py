@@ -136,6 +136,51 @@ async def start(update: Update, context: CallbackContext):
             "Вы зарегистрированы! Вы будете получать напоминания о занятиях."
         )
 
+async def schedule(update: Update, context: CallbackContext):
+    """Обрабатывает команду /schedule."""
+    args = context.args  # Получаем аргументы команды
+    if len(args) < 3:
+        await update.message.reply_text(
+            "Некорректный формат. Используйте:\n"
+            "`/schedule @username день предмет время1 время2 ...`\n\n"
+            "Пример:\n"
+            "`/schedule @ivan123 Понедельник Английский 10:00 14:00`",
+            parse_mode="Markdown"
+        )
+        return
+
+    # Парсинг аргументов команды
+    username, day, subject, *times = args
+    if not times:
+        await update.message.reply_text("Укажите хотя бы одно время.")
+        return
+
+    # Загружаем данные
+    data = load_data()
+
+    # Проверяем, есть ли пользователь
+    user_id = None
+    for uid, user_info in data["users"].items():
+        if user_info.get("username") == username.lstrip('@'):
+            user_id = uid
+            break
+
+    if not user_id:
+        await update.message.reply_text(f"Пользователь {username} не найден.")
+        return
+
+    # Добавляем расписание
+    entry = {"day": day, "description": subject, "time": ", ".join(times)}
+    if user_id not in data["schedule"]:
+        data["schedule"][user_id] = []
+    data["schedule"][user_id].append(entry)
+    save_data(data)
+
+    await update.message.reply_text(f"Расписание для {username} обновлено:\n{day} {', '.join(times)} - {subject}")
+
+async def unknown_command(update: Update, _):
+    await update.message.reply_text("Неизвестная команда.")
+
 async def students(update: Update, _):
     """Команда /students."""
     data = load_data()
@@ -147,6 +192,7 @@ async def students(update: Update, _):
     for info in data["users"].values():
         students_text += f"{info['first_name']} (@{info['username']})\n"
     await update.message.reply_text(students_text)
+
 
 async def view_all_schedules(update: Update, _):
     """Команда просмотра всех расписаний."""
@@ -220,6 +266,8 @@ def main():
     # Обработчики команд
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & filters.User(ADMIN_ID), handle_admin_button))
+    application.add_handler(CommandHandler("schedule", schedule))
+    application.add_handler(MessageHandler(filters.COMMAND, unknown_command))
 
     logging.info("Бот запущен.")
     application.run_polling()
