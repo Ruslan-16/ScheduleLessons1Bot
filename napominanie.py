@@ -137,7 +137,7 @@ async def start(update: Update, context: CallbackContext):
         )
 
 
-async def schedule(update: Update, context: CallbackContext):
+async def add_schedule(update: Update, context: CallbackContext):
     """Добавляет расписание для одного или нескольких учеников."""
     if not context.args:
         await update.message.reply_text(
@@ -298,10 +298,10 @@ def main():
     # Обработчики команд
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & filters.User(ADMIN_ID), handle_admin_button))
-    application.add_handler(CommandHandler("schedule", schedule))
+    application.add_handler(CommandHandler("schedule", add_schedule))
     application.run_polling()
     logging.info("Бот запущен.")
-    application.add_handler(MessageHandler(filters.COMMAND))
+
 
 if __name__ == "__main__":
     main()
