@@ -6,11 +6,9 @@ from datetime import datetime, timedelta
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 import boto3
 from botocore.client import Config
-from dotenv import load_dotenv
-
-load_dotenv(dotenv_path="документы.env")
 
 # --- Константы и настройки ---
 LOG_DIR = "/persistent_data"
@@ -18,13 +16,10 @@ LOG_FILE_PATH = f"{LOG_DIR}/logs.txt"
 JSON_DB_PATH = "/persistent_data/users.json"
 
 # Настройки S3
-S3_BUCKET = os.getenv("S3_BUCKET", "8df8e63e-raspisanie")
-S3_ENDPOINT = "https://s3.timeweb.cloud"
-AWS_ACCESS_KEY = os.getenv("AWS_ACCESS_KEY", "Ваш_Access_Key")
-AWS_SECRET_KEY = os.getenv("AWS_SECRET_KEY", "Ваш_Secret_Key")
-
-
-# Проверьте переменные
+S3_BUCKET = os.getenv("S3_BUCKET_NAME", "8df8e63e-raspisanie")
+S3_ENDPOINT = os.getenv("S3_ENDPOINT_URL", "https://s3.timeweb.cloud")
+AWS_ACCESS_KEY = os.getenv("AWS_ACCESS_KEY")
+AWS_SECRET_KEY = os.getenv("AWS_SECRET_KEY")
 
 # Переменные окружения для бота
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -70,11 +65,16 @@ def init_json_db():
 
 def upload_to_s3():
     """Загружает JSON-базу данных в S3."""
-    if not os.path.exists(JSON_DB_PATH):
-        logging.warning(f"Файл {JSON_DB_PATH} не найден для загрузки в S3.")
-        return
-    s3.upload_file(JSON_DB_PATH, S3_BUCKET, "users.json")
-    logging.info("Файл базы данных загружен в S3.")
+    try:
+        if not os.path.exists(JSON_DB_PATH):
+            logging.warning(f"Файл {JSON_DB_PATH} не найден для загрузки в S3.")
+            return
+
+        logging.info(f"Загружаю файл {JSON_DB_PATH} в бакет {S3_BUCKET}...")
+        s3.upload_file(JSON_DB_PATH, S3_BUCKET, "users.json")
+        logging.info("Файл базы данных успешно загружен в S3.")
+    except Exception as e:
+        logging.error(f"Ошибка при загрузке в S3: {e}")
 
 def download_from_s3():
     """Скачивает JSON-базу данных из S3."""
@@ -103,6 +103,13 @@ def save_data(data):
         json.dump(data, f, indent=4)
     logging.info(f"Данные успешно сохранены в {JSON_DB_PATH}")
     upload_to_s3()
+
+def reset_to_standard_schedule():
+    """Сбрасывает расписание на стандартное."""
+    data = load_data()
+    if "standard_schedule" in data:
+        data["schedule"] = data["standard_schedule"]
+        save_data(data)
 
 # --- Telegram-команды ---
 async def start(update: Update, context: CallbackContext):
@@ -158,31 +165,48 @@ async def view_all_schedules(update: Update, _):
             schedule_text += f"  {entry['day']} {entry['time']} - {entry['description']}\n"
     await update.message.reply_text(schedule_text)
 
-async def reset_to_standard_schedule(update: Update, _):
-    """Сбрасывает расписание к стандартному."""
-    data = load_data()
-    if "standard_schedule" in data:
-        data["schedule"] = data["standard_schedule"]
-        save_data(data)
+async def edit_schedule(update: Update, _):
+    """Функция редактирования расписания."""
+    await update.message.reply_text("Функция редактирования расписания пока в разработке.")
+
+async def handle_admin_button(update: Update, context: CallbackContext):
+    """Обрабатывает нажатие кнопок администратора."""
+    user = update.effective_user
+    if user.id != ADMIN_ID:
+        await update.message.reply_text("У вас нет прав для использования этой функции.")
+        return
+
+    text = update.message.text
+    if text == "Добавить расписание":
+        await update.message.reply_text("Для добавления расписания используйте команду /schedule.")
+    elif text == "Ученики":
+        await students(update, context)
+    elif text == "Просмотр расписания всех":
+        await view_all_schedules(update, context)
+    elif text == "Редактировать расписание":
+        await edit_schedule(update, context)
+    elif text == "Сбросить к стандартному":
+        reset_to_standard_schedule()
         await update.message.reply_text("Расписание сброшено к стандартному.")
-    else:
-        await update.message.reply_text("Стандартное расписание отсутствует.")
 
 # --- Основная функция ---
 def main():
     """Запуск бота."""
     init_json_db()
+
     application = Application.builder().token(BOT_TOKEN).build()
 
     # Планировщик задач
     scheduler = AsyncIOScheduler()
+    scheduler.add_job(
+        reset_to_standard_schedule,
+        CronTrigger(day_of_week="sat", hour=23, minute=59)  # Сброс каждую субботу
+    )
     scheduler.start()
 
     # Обработчики команд
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("students", students))
-    application.add_handler(CommandHandler("view_all_schedules", view_all_schedules))
-    application.add_handler(CommandHandler("reset", reset_to_standard_schedule))
+    application.add_handler(MessageHandler(filters.TEXT & filters.User(ADMIN_ID), handle_admin_button))
 
     logging.info("Бот запущен.")
     application.run_polling()
