@@ -172,13 +172,23 @@ async def edit_schedule(update: Update, _):
 async def handle_admin_button(update: Update, context: CallbackContext):
     """Обрабатывает нажатие кнопок администратора."""
     user = update.effective_user
+
+    # Проверяем, является ли пользователь администратором
     if user.id != ADMIN_ID:
         await update.message.reply_text("У вас нет прав для использования этой функции.")
         return
 
+    # Обработка текста кнопок
     text = update.message.text
+
     if text == "Добавить расписание":
-        await update.message.reply_text("Для добавления расписания используйте команду /schedule.")
+        await update.message.reply_text(
+            "Для добавления расписания используйте команду:\n\n"
+            "`/schedule @username день предмет время1 время2 ...`\n\n"
+            "Пример:\n"
+            "`/schedule @ivan123 Понедельник Английский 10:00 14:00`",
+            parse_mode="Markdown"
+        )
     elif text == "Ученики":
         await students(update, context)
     elif text == "Просмотр расписания всех":
@@ -188,6 +198,9 @@ async def handle_admin_button(update: Update, context: CallbackContext):
     elif text == "Сбросить к стандартному":
         reset_to_standard_schedule()
         await update.message.reply_text("Расписание сброшено к стандартному.")
+    else:
+        await update.message.reply_text("Неизвестная команда.")
+
 
 # --- Основная функция ---
 def main():
