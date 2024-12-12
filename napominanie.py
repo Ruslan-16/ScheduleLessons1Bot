@@ -138,24 +138,29 @@ async def start(update: Update, context: CallbackContext):
 
 
 async def schedule(update: Update, context: CallbackContext):
+    """Обрабатывает команду /schedule."""
     try:
-        logging.info(f"Получена команда: {update.message.text}")
-        args = context.args
-        logging.info(f"Аргументы команды: {args}")
-
+        args = context.args  # Получаем аргументы команды
         if len(args) < 3:
-            logging.warning("Недостаточно аргументов.")
-            await update.message.reply_text("Некорректный формат команды.")
+            await update.message.reply_text(
+                "Некорректный формат. Используйте:\n"
+                "`/schedule @username день предмет время1 время2 ...`\n\n"
+                "Пример:\n"
+                "`/schedule @ivan123 Понедельник Английский 10:00 14:00`",
+                parse_mode="Markdown"
+            )
             return
 
+        # Парсинг аргументов команды
         username, day, subject, *times = args
-        logging.info(f"Параметры: username={username}, day={day}, subject={subject}, times={times}")
+        if not times:
+            await update.message.reply_text("Укажите хотя бы одно время.")
+            return
 
         # Загружаем данные
         data = load_data()
-        logging.info(f"Данные загружены: {data}")
 
-        # Проверяем пользователя
+        # Проверяем, есть ли пользователь
         user_id = None
         for uid, user_info in data["users"].items():
             if user_info.get("username") == username.lstrip('@'):
@@ -163,7 +168,6 @@ async def schedule(update: Update, context: CallbackContext):
                 break
 
         if not user_id:
-            logging.warning(f"Пользователь {username} не найден.")
             await update.message.reply_text(f"Пользователь {username} не найден.")
             return
 
@@ -172,15 +176,13 @@ async def schedule(update: Update, context: CallbackContext):
         if user_id not in data["schedule"]:
             data["schedule"][user_id] = []
         data["schedule"][user_id].append(entry)
-        logging.info(f"Добавлено расписание: {entry}")
-
-        # Сохраняем изменения
         save_data(data)
+
         await update.message.reply_text(f"Расписание для {username} обновлено:\n{day} {', '.join(times)} - {subject}")
 
     except Exception as e:
         logging.error(f"Ошибка в обработчике /schedule: {e}")
-        await update.message.reply_text("Произошла ошибка.")
+        await update.message.reply_text("Произошла ошибка при добавлении расписания. Проверьте команду.")
 
 
 async def unknown_command(update: Update, _):
@@ -273,9 +275,9 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & filters.User(ADMIN_ID), handle_admin_button))
     application.add_handler(CommandHandler("schedule", schedule))
     application.add_handler(MessageHandler(filters.COMMAND, unknown_command))
-
-    logging.info("Бот запущен.")
     application.run_polling()
+    logging.info("Бот запущен.")
+    
 
 if __name__ == "__main__":
     main()
