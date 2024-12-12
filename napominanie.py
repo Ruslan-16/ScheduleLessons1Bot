@@ -213,9 +213,6 @@ async def schedule(update: Update, context: CallbackContext):
     await update.message.reply_text("\n".join(messages))
 
 
-async def unknown_command(update: Update, _):
-    await update.message.reply_text("Неизвестная команда.")
-
 async def students(update: Update, _):
     """Команда /students."""
     data = load_data()
@@ -304,7 +301,7 @@ def main():
     application.add_handler(CommandHandler("schedule", schedule))
     application.run_polling()
     logging.info("Бот запущен.")
-    application.add_handler(MessageHandler(filters.COMMAND, unknown_command))
+    application.add_handler(MessageHandler(filters.COMMAND))
 
 if __name__ == "__main__":
     main()
