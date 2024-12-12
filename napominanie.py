@@ -136,47 +136,55 @@ async def start(update: Update, context: CallbackContext):
             "Вы зарегистрированы! Вы будете получать напоминания о занятиях."
         )
 
+
 async def schedule(update: Update, context: CallbackContext):
-    """Обрабатывает команду /schedule."""
-    args = context.args  # Получаем аргументы команды
-    if len(args) < 3:
-        await update.message.reply_text(
-            "Некорректный формат. Используйте:\n"
-            "`/schedule @username день предмет время1 время2 ...`\n\n"
-            "Пример:\n"
-            "`/schedule @ivan123 Понедельник Английский 10:00 14:00`",
-            parse_mode="Markdown"
-        )
-        return
+    try:
+        # Получаем аргументы команды
+        args = context.args
+        if len(args) < 3:
+            await update.message.reply_text(
+                "Некорректный формат. Используйте:\n"
+                "`/schedule @username день предмет время1 время2 ...`\n\n"
+                "Пример:\n"
+                "`/schedule @ivan123 Понедельник Английский 10:00 14:00`",
+                parse_mode="Markdown"
+            )
+            return
 
-    # Парсинг аргументов команды
-    username, day, subject, *times = args
-    if not times:
-        await update.message.reply_text("Укажите хотя бы одно время.")
-        return
+        # Парсинг аргументов команды
+        username, day, subject, *times = args
+        if not times:
+            await update.message.reply_text("Укажите хотя бы одно время.")
+            return
 
-    # Загружаем данные
-    data = load_data()
+        # Загружаем данные
+        data = load_data()
 
-    # Проверяем, есть ли пользователь
-    user_id = None
-    for uid, user_info in data["users"].items():
-        if user_info.get("username") == username.lstrip('@'):
-            user_id = uid
-            break
+        # Проверяем, есть ли пользователь
+        user_id = None
+        for uid, user_info in data["users"].items():
+            if user_info.get("username") == username.lstrip('@'):
+                user_id = uid
+                break
 
-    if not user_id:
-        await update.message.reply_text(f"Пользователь {username} не найден.")
-        return
+        if not user_id:
+            await update.message.reply_text(f"Пользователь {username} не найден.")
+            return
 
-    # Добавляем расписание
-    entry = {"day": day, "description": subject, "time": ", ".join(times)}
-    if user_id not in data["schedule"]:
-        data["schedule"][user_id] = []
-    data["schedule"][user_id].append(entry)
-    save_data(data)
+        # Добавляем расписание
+        entry = {"day": day, "description": subject, "time": ", ".join(times)}
+        if user_id not in data["schedule"]:
+            data["schedule"][user_id] = []
+        data["schedule"][user_id].append(entry)
+        save_data(data)
 
-    await update.message.reply_text(f"Расписание для {username} обновлено:\n{day} {', '.join(times)} - {subject}")
+        await update.message.reply_text(f"Расписание для {username} обновлено:\n{day} {', '.join(times)} - {subject}")
+
+    except Exception as e:
+        # Логирование ошибки
+        logging.error(f"Ошибка в обработчике /schedule: {e}")
+        await update.message.reply_text("Произошла ошибка при добавлении расписания. Проверьте команду.")
+
 
 async def unknown_command(update: Update, _):
     await update.message.reply_text("Неизвестная команда.")
