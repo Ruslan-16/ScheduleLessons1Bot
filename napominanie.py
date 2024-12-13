@@ -4,13 +4,12 @@ import logging
 import shutil
 import tempfile
 from datetime import datetime, timedelta
+from lib2to3.fixes.fix_input import context
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
     Application,
     CommandHandler,
     CallbackQueryHandler,
-    MessageHandler,
-    filters,
     CallbackContext,
 )
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -70,7 +69,8 @@ async def upload_to_s3():
 
         async with await get_s3_client() as client:
             logging.info(f"Загружаю файл {JSON_DB_PATH} в бакет {S3_BUCKET}...")
-            await client.upload_file(JSON_DB_PATH, S3_BUCKET, "users.json")
+            with open(JSON_DB_PATH, "rb") as f:
+                await client.put_object(Bucket=S3_BUCKET, Key="users.json", Body=f)
             logging.info("Файл базы данных успешно загружен в S3.")
     except Exception as e:
         logging.error(f"Ошибка при загрузке в S3: {e}")
@@ -80,7 +80,9 @@ async def download_from_s3():
     """Скачивает JSON-базу данных из S3."""
     try:
         async with await get_s3_client() as client:
-            await client.download_file(S3_BUCKET, "users.json", JSON_DB_PATH)
+            response = await client.get_object(Bucket=S3_BUCKET, Key="users.json")
+            with open(JSON_DB_PATH, "wb") as f:
+                f.write(await response["Body"].read())
             logging.info("Файл базы данных успешно скачан из S3.")
     except Exception as e:
         logging.warning(f"Не удалось скачать файл из S3: {e}")
@@ -93,44 +95,44 @@ async def init_json_db():
         logging.info(f"Создаю файл базы данных {JSON_DB_PATH}...")
         with open(JSON_DB_PATH, "w") as f:
             json.dump({"users": {}, "schedule": {}, "standard_schedule": {}}, f)
-        await upload_to_s3()  # Используйте await для асинхронной функции
+        await upload_to_s3()
 
 
-def load_data():
+async def load_data():
     """Загружает данные из JSON-файла."""
     if not os.path.exists(JSON_DB_PATH):
-        init_json_db()
+        await init_json_db()
     with open(JSON_DB_PATH, "r") as f:
         return json.load(f)
 
 
-def save_data(data):
+async def save_data(data):
     """Сохраняет данные в JSON с временным файлом."""
     with tempfile.NamedTemporaryFile(delete=False, dir=os.path.dirname(JSON_DB_PATH)) as tmp_file:
         json.dump(data, tmp_file, indent=4)
         tmp_path = tmp_file.name
     shutil.move(tmp_path, JSON_DB_PATH)
     logging.info(f"Данные успешно сохранены в {JSON_DB_PATH}")
+    await upload_to_s3()
 
 
 async def reset_to_standard_schedule():
     """Сбрасывает расписание на стандартное."""
-    data = load_data()
+    data = await load_data()
     if "standard_schedule" in data:
         data["schedule"] = data["standard_schedule"]
-        save_data(data)
-        await upload_to_s3()
+        await save_data(data)
 
 
 # --- Telegram-команды ---
 async def start(update: Update, context: CallbackContext):
     """Команда /start."""
     user = update.effective_user
-    data = load_data()
+    data = await load_data()
 
     # Регистрируем пользователя
     data["users"][str(user.id)] = {"username": user.username, "first_name": user.first_name}
-    save_data(data)
+    await save_data(data)
 
     if user.id == ADMIN_ID:
         admin_keyboard = InlineKeyboardMarkup([
@@ -173,7 +175,7 @@ async def handle_admin_button_callback(update: Update, context: CallbackContext)
 
 async def students(update: Update, _):
     """Команда /students."""
-    data = load_data()
+    data = await load_data()
     if not data["users"]:
         await update.message.reply_text("Список учеников пуст.")
         return
@@ -186,7 +188,7 @@ async def students(update: Update, _):
 
 async def view_all_schedules(update: Update, _):
     """Команда просмотра всех расписаний."""
-    data = load_data()
+    data = await load_data()
     if not data["schedule"]:
         await update.message.reply_text("Расписание пусто.")
         return
@@ -202,9 +204,9 @@ async def view_all_schedules(update: Update, _):
     await update.message.reply_text(schedule_text)
 
 
-async def send_reminders(context: CallbackContext):
+async def send_reminders():
     """Отправляет напоминания о занятиях."""
-    data = load_data()
+    data = await load_data()
     now = datetime.now() + TIME_OFFSET
 
     for user_id, schedule in data["schedule"].items():
@@ -222,7 +224,7 @@ async def send_reminders(context: CallbackContext):
                 except Exception as e:
                     logging.error(f"Не удалось отправить уведомление для пользователя {user_id}: {e}")
 
-    save_data(data)
+    await save_data(data)
 
 
 # --- Основная функция ---
@@ -234,11 +236,8 @@ async def main():
 
     # Планировщик задач
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(
-        reset_to_standard_schedule,
-        CronTrigger(day_of_week="sat", hour=23, minute=59),
-    )
-    scheduler.add_job(send_reminders, "interval", minutes=1, args=[application])
+    scheduler.add_job(reset_to_standard_schedule, CronTrigger(day_of_week="sat", hour=23, minute=59))
+    scheduler.add_job(send_reminders, "interval", minutes=1)
     scheduler.start()
 
     # Обработчики команд
@@ -253,4 +252,3 @@ async def main():
 if __name__ == "__main__":
     import asyncio
     asyncio.run(main())
-
