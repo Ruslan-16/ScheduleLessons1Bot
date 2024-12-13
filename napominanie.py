@@ -2,13 +2,20 @@ import os
 import json
 import logging
 import shutil
+import tempfile
 from datetime import datetime, timedelta
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    CallbackQueryHandler,
+    MessageHandler,
+    filters,
+    CallbackContext,
+)
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-import boto3
-from botocore.client import Config
+from aiobotocore.session import get_session
 
 # --- Константы и настройки ---
 LOG_DIR = "/persistent_data"
@@ -39,77 +46,80 @@ os.makedirs(LOG_DIR, exist_ok=True)
 logging.basicConfig(
     filename=LOG_FILE_PATH,
     level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
+    format="%(asctime)s - %(levelname)s - %(message)s",
 )
 
-# --- S3 клиент ---
-s3 = boto3.client(
-    's3',
-    endpoint_url=S3_ENDPOINT,
-    aws_access_key_id=AWS_ACCESS_KEY,
-    aws_secret_access_key=AWS_SECRET_KEY,
-    config=Config(signature_version="s3v4")
-)
+# --- Асинхронный S3 клиент ---
+async def get_s3_client():
+    """Создаёт асинхронный клиент S3."""
+    session = get_session()
+    return session.create_client(
+        "s3",
+        endpoint_url=S3_ENDPOINT,
+        aws_access_key_id=AWS_ACCESS_KEY,
+        aws_secret_access_key=AWS_SECRET_KEY,
+    )
 
 # --- Вспомогательные функции ---
-def init_json_db():
-    """Создаёт файл базы данных, если его нет."""
-    os.makedirs(os.path.dirname(JSON_DB_PATH), exist_ok=True)
-    if not os.path.exists(JSON_DB_PATH):
-        logging.info(f"Создаю файл базы данных {JSON_DB_PATH}...")
-        with open(JSON_DB_PATH, 'w') as f:
-            json.dump({"users": {}, "schedule": {}, "standard_schedule": {}}, f)
-        upload_to_s3()
-    else:
-        logging.info(f"Файл базы данных {JSON_DB_PATH} уже существует.")
-
-def upload_to_s3():
+async def upload_to_s3():
     """Загружает JSON-базу данных в S3."""
     try:
         if not os.path.exists(JSON_DB_PATH):
             logging.warning(f"Файл {JSON_DB_PATH} не найден для загрузки в S3.")
             return
 
-        logging.info(f"Загружаю файл {JSON_DB_PATH} в бакет {S3_BUCKET}...")
-        s3.upload_file(JSON_DB_PATH, S3_BUCKET, "users.json")
-        logging.info("Файл базы данных успешно загружен в S3.")
+        async with await get_s3_client() as client:
+            logging.info(f"Загружаю файл {JSON_DB_PATH} в бакет {S3_BUCKET}...")
+            await client.upload_file(JSON_DB_PATH, S3_BUCKET, "users.json")
+            logging.info("Файл базы данных успешно загружен в S3.")
     except Exception as e:
         logging.error(f"Ошибка при загрузке в S3: {e}")
 
-def download_from_s3():
+
+async def download_from_s3():
     """Скачивает JSON-базу данных из S3."""
     try:
-        s3.download_file(S3_BUCKET, "users.json", JSON_DB_PATH)
-        logging.info("Файл базы данных успешно скачан из S3.")
+        async with await get_s3_client() as client:
+            await client.download_file(S3_BUCKET, "users.json", JSON_DB_PATH)
+            logging.info("Файл базы данных успешно скачан из S3.")
     except Exception as e:
         logging.warning(f"Не удалось скачать файл из S3: {e}")
 
+
+def init_json_db():
+    """Создаёт файл базы данных, если его нет."""
+    os.makedirs(os.path.dirname(JSON_DB_PATH), exist_ok=True)
+    if not os.path.exists(JSON_DB_PATH):
+        logging.info(f"Создаю файл базы данных {JSON_DB_PATH}...")
+        with open(JSON_DB_PATH, "w") as f:
+            json.dump({"users": {}, "schedule": {}, "standard_schedule": {}}, f)
+
+
 def load_data():
     """Загружает данные из JSON-файла."""
-    download_from_s3()
     if not os.path.exists(JSON_DB_PATH):
         init_json_db()
-    with open(JSON_DB_PATH, 'r') as f:
+    with open(JSON_DB_PATH, "r") as f:
         return json.load(f)
 
+
 def save_data(data):
-    """Сохраняет данные в JSON-файл и загружает их в S3."""
-    backup_path = f"{JSON_DB_PATH}.backup"
-    if os.path.exists(JSON_DB_PATH):
-        shutil.copy(JSON_DB_PATH, backup_path)
-        logging.info(f"Резервная копия создана: {backup_path}")
-
-    with open(JSON_DB_PATH, 'w') as f:
-        json.dump(data, f, indent=4)
+    """Сохраняет данные в JSON с временным файлом."""
+    with tempfile.NamedTemporaryFile(delete=False, dir=os.path.dirname(JSON_DB_PATH)) as tmp_file:
+        json.dump(data, tmp_file, indent=4)
+        tmp_path = tmp_file.name
+    shutil.move(tmp_path, JSON_DB_PATH)
     logging.info(f"Данные успешно сохранены в {JSON_DB_PATH}")
-    upload_to_s3()
 
-def reset_to_standard_schedule():
+
+async def reset_to_standard_schedule():
     """Сбрасывает расписание на стандартное."""
     data = load_data()
     if "standard_schedule" in data:
         data["schedule"] = data["standard_schedule"]
         save_data(data)
+        await upload_to_s3()
+
 
 # --- Telegram-команды ---
 async def start(update: Update, context: CallbackContext):
@@ -122,14 +132,15 @@ async def start(update: Update, context: CallbackContext):
     save_data(data)
 
     if user.id == ADMIN_ID:
-        admin_keyboard = [
-            ["Добавить расписание"],
-            ["Ученики", "Просмотр расписания всех"],
-            ["Редактировать расписание", "Сбросить к стандартному"]
-        ]
+        admin_keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Добавить расписание", callback_data="add_schedule")],
+            [InlineKeyboardButton("Ученики", callback_data="view_students")],
+            [InlineKeyboardButton("Просмотр расписания всех", callback_data="view_schedules")],
+            [InlineKeyboardButton("Сбросить к стандартному", callback_data="reset_schedule")],
+        ])
         await update.message.reply_text(
             "Вы зарегистрированы как администратор! Выберите команду:",
-            reply_markup=ReplyKeyboardMarkup(admin_keyboard, resize_keyboard=True)
+            reply_markup=admin_keyboard,
         )
     else:
         await update.message.reply_text(
@@ -137,80 +148,26 @@ async def start(update: Update, context: CallbackContext):
         )
 
 
-async def add_schedule(update: Update, context: CallbackContext):
-    """Добавляет расписание для одного или нескольких учеников."""
-    if not context.args:
-        await update.message.reply_text(
-            "Использование: /schedule\n"
-            "@username день предмет время1 время2 ...\n\n"
+async def handle_admin_button_callback(update: Update, context: CallbackContext):
+    """Обрабатывает нажатие кнопок администратора."""
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "add_schedule":
+        await query.message.reply_text(
             "Пример:\n"
-            "/schedule @ivan123 Понедельник Математика 10:00 14:00"
+            "`/schedule @ivan123 Понедельник Английский 10:00 14:00`",
+            parse_mode="Markdown",
         )
-        return
-
-    # Получаем строки ввода (могут быть разделены по строкам, если пользователь ввёл много)
-    lines = " ".join(context.args).split("\n")
-    data = load_data()
-    messages = []
-
-    # Проверка наличия ключа 'schedule'
-    if "schedule" not in data:
-        logging.warning("Ключ 'schedule' отсутствует, создаю...")
-        data["schedule"] = {}
-
-    # Список валидных дней недели
-    valid_days = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
-
-    # Обрабатываем каждую строку из команды
-    for line in lines:
-        parts = line.strip().split()
-        if len(parts) < 4:
-            messages.append(f"Ошибка: недостаточно данных в строке: {line}")
-            logging.warning(f"Недостаточно данных в строке: {line}")
-            continue
-
-        username, day, subject, *times = parts
-
-        # Проверяем день недели
-        if day not in valid_days:
-            messages.append(f"Ошибка: некорректный день недели: {day}")
-            logging.warning(f"Некорректный день недели: {day}")
-            continue
-
-        # Проверяем, существует ли пользователь
-        user_id = next(
-            (uid for uid, info in data["users"].items() if info["username"] == username.lstrip('@')),
-            None
-        )
-        if not user_id:
-            messages.append(f"Ошибка: пользователь {username} не найден.")
-            logging.warning(f"Пользователь {username} не найден.")
-            continue
-
-        # Добавляем расписание для найденного пользователя
-        data["schedule"].setdefault(user_id, [])
-        for time in times:
-            try:
-                # Проверка формата времени
-                datetime.strptime(time, "%H:%M")
-                data["schedule"][user_id].append({
-                    "day": day,
-                    "time": time,
-                    "description": subject,
-                    "reminder_sent_1h": False,
-                    "reminder_sent_24h": False
-                })
-            except ValueError:
-                messages.append(f"Ошибка: некорректный формат времени {time} для {username}")
-                logging.warning(f"Некорректный формат времени {time} для {username}")
-                continue
-
-        messages.append(f"Добавлено: {username} - {day} - {subject} в {', '.join(times)}")
-
-    # Сохраняем обновлённые данные
-    save_data(data)
-    logging.info(f"Данные сохранены: {data}")
-    await update.message.reply_text("\n".join(messages))
+    elif query.data == "view_students":
+        await students(update, context)
+    elif query.data == "view_schedules":
+        await view_all_schedules(update, context)
+    elif query.data == "reset_schedule":
+        await reset_to_standard_schedule()
+        await query.message.reply_text("Расписание сброшено к стандартному.")
+    else:
+        await query.message.reply_text("Неизвестная команда.")
 
 
 async def students(update: Update, _):
@@ -243,41 +200,28 @@ async def view_all_schedules(update: Update, _):
             schedule_text += f"  {entry['day']} {entry['time']} - {entry['description']}\n"
     await update.message.reply_text(schedule_text)
 
-async def edit_schedule(update: Update, _):
-    """Функция редактирования расписания."""
-    await update.message.reply_text("Функция редактирования расписания пока в разработке.")
 
-async def handle_admin_button(update: Update, context: CallbackContext):
-    """Обрабатывает нажатие кнопок администратора."""
-    user = update.effective_user
+async def send_reminders(context: CallbackContext):
+    """Отправляет напоминания о занятиях."""
+    data = load_data()
+    now = datetime.now() + TIME_OFFSET
 
-    # Проверяем, является ли пользователь администратором
-    if user.id != ADMIN_ID:
-        await update.message.reply_text("У вас нет прав для использования этой функции.")
-        return
+    for user_id, schedule in data["schedule"].items():
+        for entry in schedule:
+            entry_time = datetime.strptime(entry["time"], "%H:%M")
+            reminder_time = datetime.combine(now.date(), entry_time.time()) - timedelta(hours=1)
 
-    # Обработка текста кнопок
-    text = update.message.text
+            if now >= reminder_time and not entry.get("reminder_sent_1h", False):
+                try:
+                    await context.bot.send_message(
+                        chat_id=user_id,
+                        text=f"Напоминание: {entry['description']} начнётся через час.",
+                    )
+                    entry["reminder_sent_1h"] = True
+                except Exception as e:
+                    logging.error(f"Не удалось отправить уведомление для пользователя {user_id}: {e}")
 
-    if text == "Добавить расписание":
-        await update.message.reply_text(
-            "Для добавления расписания используйте команду:\n\n"
-            "`/schedule @username день предмет время1 время2 ...`\n\n"
-            "Пример:\n"
-            "`/schedule @ivan123 Понедельник Английский 10:00 14:00`",
-            parse_mode="Markdown"
-        )
-    elif text == "Ученики":
-        await students(update, context)
-    elif text == "Просмотр расписания всех":
-        await view_all_schedules(update, context)
-    elif text == "Редактировать расписание":
-        await edit_schedule(update, context)
-    elif text == "Сбросить к стандартному":
-        reset_to_standard_schedule()
-        await update.message.reply_text("Расписание сброшено к стандартному.")
-    else:
-        await update.message.reply_text("Неизвестная команда.")
+    save_data(data)
 
 
 # --- Основная функция ---
@@ -291,14 +235,16 @@ def main():
     scheduler = AsyncIOScheduler()
     scheduler.add_job(
         reset_to_standard_schedule,
-        CronTrigger(day_of_week="sat", hour=23, minute=59)  # Сброс каждую субботу
+        CronTrigger(day_of_week="sat", hour=23, minute=59),
     )
+    scheduler.add_job(send_reminders, "interval", minutes=1, args=[application])
     scheduler.start()
 
     # Обработчики команд
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & filters.User(ADMIN_ID), handle_admin_button))
-    application.add_handler(CommandHandler("schedule", add_schedule))
+    application.add_handler(CallbackQueryHandler(handle_admin_button_callback))
+
+    # Запуск бота
     application.run_polling()
     logging.info("Бот запущен.")
 
