@@ -86,13 +86,14 @@ async def download_from_s3():
         logging.warning(f"Не удалось скачать файл из S3: {e}")
 
 
-def init_json_db():
+async def init_json_db():
     """Создаёт файл базы данных, если его нет."""
     os.makedirs(os.path.dirname(JSON_DB_PATH), exist_ok=True)
     if not os.path.exists(JSON_DB_PATH):
         logging.info(f"Создаю файл базы данных {JSON_DB_PATH}...")
         with open(JSON_DB_PATH, "w") as f:
             json.dump({"users": {}, "schedule": {}, "standard_schedule": {}}, f)
+        await upload_to_s3()  # Используйте await для асинхронной функции
 
 
 def load_data():
@@ -225,9 +226,9 @@ async def send_reminders(context: CallbackContext):
 
 
 # --- Основная функция ---
-def main():
+async def main():
     """Запуск бота."""
-    init_json_db()
+    await init_json_db()
 
     application = Application.builder().token(BOT_TOKEN).build()
 
@@ -245,9 +246,11 @@ def main():
     application.add_handler(CallbackQueryHandler(handle_admin_button_callback))
 
     # Запуск бота
-    application.run_polling()
+    await application.run_polling()
     logging.info("Бот запущен.")
 
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())
+
