@@ -1,163 +1,153 @@
 import os
 import json
-import logging
-from datetime import timedelta
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import requests
+from datetime import datetime, timedelta
+from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
+from telegram.ext import Application, CommandHandler, CallbackContext, MessageHandler, filters
 
-# --- Константы и настройки ---
-LOG_DIR = "/persistent_data"
-LOG_FILE_PATH = f"{LOG_DIR}/logs.txt"
-JSON_DB_PATH = "/persistent_data/users.json"
+# --- Переменные окружения ---
+BOT_TOKEN = os.getenv("BOT_TOKEN")  # Токен бота из переменной окружения
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))  # ID администратора
+GITHUB_RAW_URL = "https://github.com/Ruslan-16/ScheduleLessons1Bot/blob/main/users.json"  # Ссылка на default расписание
+DEFAULT_SCHEDULE_FILE = "users.json"  # Локальный файл для хранения стандартного расписания
 
-# Переменные окружения для бота
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+# --- Глобальные переменные ---
+temporary_schedule = {}  # Оперативное расписание
 
-# Временная зона
-TIME_OFFSET = timedelta(hours=3)
+# --- Функции для загрузки и сохранения расписания ---
+def load_default_schedule():
+    """Загрузить стандартное расписание с GitHub."""
+    try:
+        response = requests.get(GITHUB_RAW_URL)
+        if response.status_code == 200:
+            with open(DEFAULT_SCHEDULE_FILE, "w", encoding="utf-8") as file:
+                file.write(response.text)
+            return json.loads(response.text)
+        else:
+            print("Ошибка при загрузке расписания с GitHub")
+    except Exception as e:
+        print(f"Ошибка: {e}")
+    return {}
 
-# Проверка переменных окружения
-if not BOT_TOKEN:
-    raise ValueError("Переменная окружения BOT_TOKEN не установлена!")
-if ADMIN_ID == 0:
-    raise ValueError("Переменная окружения ADMIN_ID не установлена или равна 0!")
+def reset_schedule():
+    """Сброс расписания к стандартному."""
+    global temporary_schedule
+    temporary_schedule = load_default_schedule()
+    print("Расписание сброшено к стандартному.")
 
-# --- Настройка логирования ---
-os.makedirs(LOG_DIR, exist_ok=True)
-logging.basicConfig(
-    filename=LOG_FILE_PATH,
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
-
-# --- Вспомогательные функции ---
-def init_json_db():
-    """Создаёт файл базы данных, если его нет."""
-    os.makedirs(os.path.dirname(JSON_DB_PATH), exist_ok=True)
-    if not os.path.exists(JSON_DB_PATH):
-        logging.info(f"Создаю файл базы данных {JSON_DB_PATH}...")
-        with open(JSON_DB_PATH, 'w') as f:
-            json.dump({"users": {}, "schedule": {}, "standard_schedule": {}}, f)
-
-def load_data():
-    """Загружает данные из локального JSON-файла."""
-    if not os.path.exists(JSON_DB_PATH):
-        init_json_db()
-    with open(JSON_DB_PATH, 'r') as f:
-        return json.load(f)
-
-def save_data(data):
-    """Сохраняет данные в локальный JSON-файл."""
-    with open(JSON_DB_PATH, 'w') as f:
-        json.dump(data, f, indent=4)
-    logging.info(f"Данные успешно сохранены в {JSON_DB_PATH}")
-
-def reset_to_standard_schedule():
-    """Сбрасывает расписание на стандартное."""
-    data = load_data()
-    if "standard_schedule" in data:
-        data["schedule"] = data["standard_schedule"]
-        save_data(data)
-
-# --- Telegram-команды ---
+# --- Обработчики команд ---
 async def start(update: Update, context: CallbackContext):
-    """Команда /start."""
-    user = update.effective_user
-    data = load_data()
+    user_id = str(update.effective_chat.id)
+    if user_id not in temporary_schedule:
+        temporary_schedule[user_id] = []
+    await update.message.reply_text("Добро пожаловать! Ваше расписание настроено. Используйте кнопки для управления.")
 
-    # Регистрируем пользователя
-    data["users"][str(user.id)] = {"username": user.username, "first_name": user.first_name}
-    save_data(data)
+async def view_schedule(update: Update, context: CallbackContext):
+    user_id = str(update.effective_chat.id)
+    user_schedule = temporary_schedule.get(user_id, ["У вас нет занятий."])
+    message = "\n".join(user_schedule)
+    await update.message.reply_text(f"Ваше расписание:\n{message}")
 
-    if user.id == ADMIN_ID:
-        admin_keyboard = [
-            ["Ученики", "Просмотр расписания всех"],
-            ["Сбросить к стандартному"]
-        ]
-        await update.message.reply_text(
-            "Вы зарегистрированы как администратор! Выберите команду:",
-            reply_markup=ReplyKeyboardMarkup(admin_keyboard, resize_keyboard=True)
-        )
-    else:
-        await update.message.reply_text(
-            "Вы зарегистрированы! Вы будете получать напоминания о занятиях."
-        )
 
-async def students(update: Update, _):
-    """Команда /students."""
-    data = load_data()
-    if not data["users"]:
-        await update.message.reply_text("Список учеников пуст.")
+async def add_schedule(update: Update, context: CallbackContext):
+    """Добавляет или изменяет расписание конкретного пользователя."""
+    if update.effective_chat.id != ADMIN_ID:
+        await update.message.reply_text("У вас нет прав для выполнения этой команды.")
         return
 
-    students_text = "Список учеников:\n"
-    for info in data["users"].values():
-        students_text += f"{info['first_name']} (@{info['username']})\n"
-    await update.message.reply_text(students_text)
+    try:
+        # Разбираем аргументы команды
+        user_id = context.args[0]  # Имя ученика (ключ в расписании)
+        lesson = " ".join(context.args[1:])  # Остальные аргументы - это день, время и занятие
 
-async def view_all_schedules(update: Update, _):
-    """Команда просмотра всех расписаний."""
-    data = load_data()
-    if not data["schedule"]:
-        await update.message.reply_text("Расписание пусто.")
+        if not lesson:
+            await update.message.reply_text("Ошибка: укажите день, время и занятие!")
+            return
+
+        # Добавляем или обновляем расписание ученика
+        if user_id in temporary_schedule:
+            temporary_schedule[user_id].append(lesson)
+        else:
+            temporary_schedule[user_id] = [lesson]
+
+        await update.message.reply_text(f"Расписание для {user_id} обновлено:\n{lesson}")
+    except (IndexError, ValueError):
+        await update.message.reply_text("Использование команды:\n/add_schedule user_id день время - занятие")
+
+
+async def view_all(update: Update, context: CallbackContext):
+    if update.effective_chat.id != ADMIN_ID:
+        await update.message.reply_text("У вас нет прав для выполнения этой команды.")
         return
+    message = "\n\n".join([f"{user}: {', '.join(lessons)}" for user, lessons in temporary_schedule.items()])
+    await update.message.reply_text(f"Все расписание:\n{message}")
 
-    schedule_text = "Расписание всех учеников:\n"
-    for user_id, schedule in data["schedule"].items():
-        user_info = data["users"].get(user_id, {})
-        username = user_info.get("username", "Неизвестно")
-        first_name = user_info.get("first_name", "Неизвестно")
-        schedule_text += f"{first_name} (@{username}):\n"
-        for entry in schedule:
-            schedule_text += f"  {entry['day']} {entry['time']} - {entry['description']}\n"
-    await update.message.reply_text(schedule_text)
-
-async def handle_admin_button(update: Update, context: CallbackContext):
-    """Обрабатывает нажатие кнопок администратора."""
-    user = update.effective_user
-
-    # Проверяем, является ли пользователь администратором
-    if user.id != ADMIN_ID:
-        await update.message.reply_text("У вас нет прав для использования этой функции.")
+async def manual_reset(update: Update, context: CallbackContext):
+    if update.effective_chat.id != ADMIN_ID:
+        await update.message.reply_text("У вас нет прав для выполнения этой команды.")
         return
+    reset_schedule()
+    await update.message.reply_text("Расписание успешно сброшено к стандартному.")
 
-    # Обработка текста кнопок
+# --- Планировщик задач ---
+def schedule_jobs(application: Application):
+    scheduler = BackgroundScheduler()
+    # Сброс расписания каждую субботу в 23:00
+    scheduler.add_job(reset_schedule, CronTrigger(day_of_week="sat", hour=23, minute=0))
+    scheduler.start()
+    print("Планировщик задач запущен.")
+
+# --- Главное меню кнопок ---
+def get_main_menu(is_admin=False):
+    buttons = [
+        [KeyboardButton("Моё расписание")],
+    ]
+    if is_admin:
+        buttons.append([KeyboardButton("Просмотреть всё расписание"), KeyboardButton("Сбросить расписание")])
+    return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
+
+async def menu(update: Update, context: CallbackContext):
+    is_admin = update.effective_chat.id == ADMIN_ID
+    await update.message.reply_text("Выберите действие:", reply_markup=get_main_menu(is_admin))
+
+# --- Обработчик сообщений ---
+async def button_handler(update: Update, context: CallbackContext):
     text = update.message.text
+    user_id = update.effective_chat.id
+    if text == "Моё расписание":
+        await view_schedule(update, context)
+    elif text == "Просмотреть всё расписание" and user_id == ADMIN_ID:
+        await view_all(update, context)
+    elif text == "Сбросить расписание" and user_id == ADMIN_ID:
+        await manual_reset(update, context)
 
-    if text == "Ученики":
-        await students(update, context)
-    elif text == "Просмотр расписания всех":
-        await view_all_schedules(update, context)
-    elif text == "Сбросить к стандартному":
-        reset_to_standard_schedule()
-        await update.message.reply_text("Расписание сброшено к стандартному.")
-    else:
-        await update.message.reply_text("Неизвестная команда.")
-
-# --- Основная функция ---
+# --- Главная функция ---
 def main():
-    """Запуск бота."""
-    init_json_db()
+    global temporary_schedule
+    # Загрузить стандартное расписание при старте
+    temporary_schedule = load_default_schedule()
 
-    application = Application.builder().token(BOT_TOKEN).build()
+    # Инициализация бота
+    app = Application.builder().token("YOUR_TELEGRAM_BOT_TOKEN").build()
 
     # Планировщик задач
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(
-        reset_to_standard_schedule,
-        CronTrigger(day_of_week="sat", hour=23, minute=59)  # Сброс каждую субботу
-    )
-    scheduler.start()
+    schedule_jobs(app)
 
     # Обработчики команд
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & filters.User(ADMIN_ID), handle_admin_button))
-    application.run_polling()
-    logging.info("Бот запущен.")
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("add_schedule", add_schedule))
+    app.add_handler(CommandHandler("view_all", view_all))
+    app.add_handler(CommandHandler("menu", menu))
+    app.add_handler(CommandHandler("reset", manual_reset))
 
+    # Обработчик кнопок
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, button_handler))
+
+    # Запуск бота
+    print("Бот запущен...")
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
