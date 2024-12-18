@@ -4,5 +4,7 @@ apscheduler==3.10.4
 boto3
 python-dotenv
 aiobotocore[boto3]
+requests
+
 
 
