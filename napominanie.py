@@ -14,11 +14,10 @@ load_dotenv()
 # --- Переменные окружения ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")  # Токен бота
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))  # ID администратора
-GITHUB_RAW_URL = "https://raw.githubusercontent.com/Ruslan-16/ScheduleLessons1Bot/main/users.json"  # URL расписания
+GITHUB_RAW_URL = "https://raw.githubusercontent.com/Ruslan-16/ScheduleLessons1Bot/main/users.json"
 
 # --- Глобальные переменные ---
 temporary_schedule = {}  # Хранение оперативного расписания
-
 
 # --- Функции загрузки расписания ---
 def load_default_schedule():
@@ -28,7 +27,7 @@ def load_default_schedule():
         response = requests.get(github_raw_url)
         response.raise_for_status()
         schedule = response.json()
-        print(f"Расписание успешно загружено: {schedule}")
+        print(f"Расписание успешно загружено: {schedule}")  # Отладочный вывод
         return schedule
     except requests.RequestException as e:
         print(f"Ошибка загрузки расписания с GitHub: {e}")
@@ -37,12 +36,12 @@ def load_default_schedule():
         print("Ошибка: Файл расписания не является валидным JSON.")
         return {}
 
-
 def reset_schedule():
     """Сбрасывает расписание к стандартному."""
     global temporary_schedule
     temporary_schedule = load_default_schedule()
-    print("Текущее расписание сброшено:", temporary_schedule)
+    print("Текущее расписание после сброса:", temporary_schedule)  # Отладочный вывод
+
 
 
 # --- Функции обработки команд ---
@@ -58,14 +57,17 @@ async def start(update: Update, context: CallbackContext):
 async def view_schedule(update: Update, context: CallbackContext):
     """Показывает расписание для конкретного ученика."""
     user_name = update.effective_chat.first_name  # Имя пользователя из Telegram
-    user_schedule = temporary_schedule.get(user_name)  # Ищем расписание по имени пользователя
+
+    # Проверяем, есть ли пользователь в расписании
+    user_schedule = temporary_schedule.get(user_name)
 
     if user_schedule:
+        # Если расписание найдено
         message = "\n".join(user_schedule)
         await update.message.reply_text(f"Ваше расписание:\n{message}")
     else:
+        # Если расписание не найдено
         await update.message.reply_text("У вас нет расписания. Проверьте, правильно ли указаны ваши данные в системе.")
-
 
 async def view_all(update: Update, context: CallbackContext):
     """Показывает всё расписание (только для администратора)."""
@@ -135,6 +137,11 @@ async def button_handler(update: Update, context: CallbackContext):
     user_id = update.effective_chat.id
     text = update.message.text
 
+    # Проверяем, что расписание загружено
+    if not temporary_schedule:
+        await update.message.reply_text("Расписание не загружено. Попробуйте позже или обратитесь к администратору.")
+        return
+
     if text == "Моё расписание":
         await view_schedule(update, context)
     elif text == "Просмотреть всё расписание" and user_id == ADMIN_ID:
@@ -158,11 +165,11 @@ def schedule_jobs():
 # --- Главная функция ---
 def main():
     global temporary_schedule
-    temporary_schedule = load_default_schedule()
+    reset_schedule()  # Загружаем расписание с GitHub
 
     app = Application.builder().token(BOT_TOKEN).build()
 
-    # Планировщик
+    # Планировщик задач
     schedule_jobs()
 
     # Обработчики команд
@@ -176,6 +183,7 @@ def main():
 
     print("Бот запущен...")
     app.run_polling()
+
 
 
 if __name__ == "__main__":
