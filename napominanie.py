@@ -6,76 +6,106 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from dotenv import load_dotenv
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackContext, filters
 
+# Загрузка переменных окружения
 load_dotenv()
+
 # --- Переменные окружения ---
-BOT_TOKEN = os.getenv("BOT_TOKEN")  # Токен бота из переменной окружения
+BOT_TOKEN = os.getenv("BOT_TOKEN")  # Токен бота
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))  # ID администратора
-GITHUB_RAW_URL = "https://github.com/Ruslan-16/ScheduleLessons1Bot/blob/main/users.json"  # Ссылка на default расписание
-DEFAULT_SCHEDULE_FILE = "users.json"  # Локальный файл для хранения стандартного расписания
+GITHUB_RAW_URL = "https://raw.githubusercontent.com/Ruslan-16/ScheduleLessons1Bot/main/users.json"  # URL расписания
 
 # --- Глобальные переменные ---
-temporary_schedule = {}  # Оперативное расписание
+temporary_schedule = {}  # Хранение оперативного расписания
 
+
+# --- Функции загрузки расписания ---
 def load_default_schedule():
-    """Загружает стандартное расписание с GitHub."""
-    global GITHUB_RAW_URL
+    """Загружает расписание с GitHub."""
     try:
-        response = requests.get(GITHUB_RAW_URL.replace("github.com", "raw.githubusercontent.com").
-                                replace("/blob/", "/"))
+        github_raw_url = GITHUB_RAW_URL.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
+        response = requests.get(github_raw_url)
         response.raise_for_status()
-        return response.json()  # Преобразуем JSON в словарь
+        schedule = response.json()
+        print(f"Расписание успешно загружено: {schedule}")
+        return schedule
     except requests.RequestException as e:
         print(f"Ошибка загрузки расписания с GitHub: {e}")
         return {}
-
-# --- Инициализация глобального расписания ---
-temporary_schedule = load_default_schedule()
+    except json.JSONDecodeError:
+        print("Ошибка: Файл расписания не является валидным JSON.")
+        return {}
 
 
 def reset_schedule():
-    """Сброс расписания к стандартному."""
+    """Сбрасывает расписание к стандартному."""
     global temporary_schedule
     temporary_schedule = load_default_schedule()
-    print("Расписание сброшено к стандартному.")
+    print("Текущее расписание сброшено:", temporary_schedule)
 
-# --- Обработчики команд ---
+
+# --- Функции обработки команд ---
 async def start(update: Update, context: CallbackContext):
-    user_id = str(update.effective_chat.id)
-    if user_id not in temporary_schedule:
-        temporary_schedule[user_id] = []
-    await update.message.reply_text("Добро пожаловать! Ваше расписание настроено. Используйте кнопки для управления.")
+    """Обрабатывает команду /start."""
+    is_admin = update.effective_chat.id == ADMIN_ID
+    await update.message.reply_text(
+        "Добро пожаловать! Выберите действие:",
+        reply_markup=get_main_menu(is_admin)
+    )
+
 
 async def view_schedule(update: Update, context: CallbackContext):
-    """Показывает расписание пользователя."""
+    """Показывает расписание для конкретного ученика."""
     user_name = update.effective_chat.first_name  # Имя пользователя из Telegram
-    user_schedule = temporary_schedule.get(user_name)  # Сопоставляем имя с расписанием
+    user_schedule = temporary_schedule.get(user_name)  # Ищем расписание по имени пользователя
 
     if user_schedule:
         message = "\n".join(user_schedule)
         await update.message.reply_text(f"Ваше расписание:\n{message}")
     else:
-        await update.message.reply_text("У вас нет расписания.")
+        await update.message.reply_text("У вас нет расписания. Проверьте, правильно ли указаны ваши данные в системе.")
 
+
+async def view_all(update: Update, context: CallbackContext):
+    """Показывает всё расписание (только для администратора)."""
+    if update.effective_chat.id != ADMIN_ID:
+        await update.message.reply_text("У вас нет прав для выполнения этой команды.")
+        return
+
+    if not temporary_schedule:
+        await update.message.reply_text("Расписание пустое или не загружено.")
+        return
+
+    message = "\n\n".join([
+        f"{user}:\n" + "\n".join(lessons)
+        for user, lessons in temporary_schedule.items()
+    ])
+    await update.message.reply_text(f"Все расписание:\n\n{message}")
+
+
+async def manual_reset(update: Update, context: CallbackContext):
+    """Ручной сброс расписания (только для администратора)."""
+    if update.effective_chat.id != ADMIN_ID:
+        await update.message.reply_text("У вас нет прав для выполнения этой команды.")
+        return
+    reset_schedule()
+    await update.message.reply_text("Расписание успешно сброшено к стандартному.")
 
 
 async def add_schedule(update: Update, context: CallbackContext):
-    """Добавляет или изменяет расписание конкретного пользователя."""
+    """Добавляет или изменяет расписание конкретного пользователя (только для администратора)."""
     if update.effective_chat.id != ADMIN_ID:
         await update.message.reply_text("У вас нет прав для выполнения этой команды.")
         return
 
     try:
-        # Разбираем аргументы команды
-        user_id = context.args[0]  # Имя ученика (ключ в расписании)
-        lesson = " ".join(context.args[1:])  # Остальные аргументы - это день, время и занятие
-
+        user_id = context.args[0]  # Имя ученика
+        lesson = " ".join(context.args[1:])  # Остальные аргументы - это расписание
         if not lesson:
-            await update.message.reply_text("Ошибка: укажите день, время и занятие!")
+            await update.message.reply_text("Ошибка: укажите расписание!")
             return
 
-        # Добавляем или обновляем расписание ученика
         if user_id in temporary_schedule:
             temporary_schedule[user_id].append(lesson)
         else:
@@ -85,33 +115,10 @@ async def add_schedule(update: Update, context: CallbackContext):
     except (IndexError, ValueError):
         await update.message.reply_text("Использование команды:\n/add_schedule user_id день время - занятие")
 
-# --- Функция для отображения всего расписания (для администратора) ---
-async def view_all(update: Update, context: CallbackContext):
-    """Показывает всё расписание (только для администратора)."""
-    if update.effective_chat.id != ADMIN_ID:
-        await update.message.reply_text("У вас нет прав для выполнения этой команды.")
-        return
-    message = "\n\n".join([f"{user}: {', '.join(lessons)}" for user, lessons in temporary_schedule.items()])
-    await update.message.reply_text(f"Все расписание:\n{message}")
 
-async def manual_reset(update: Update, context: CallbackContext):
-    if update.effective_chat.id != ADMIN_ID:
-        await update.message.reply_text("У вас нет прав для выполнения этой команды.")
-        return
-    reset_schedule()
-    await update.message.reply_text("Расписание успешно сброшено к стандартному.")
-
-# --- Планировщик задач ---
-def schedule_jobs(application: Application):
-    scheduler = BackgroundScheduler()
-    # Сброс расписания каждую субботу в 23:00
-    scheduler.add_job(reset_schedule, CronTrigger(day_of_week="sat", hour=23, minute=0))
-    scheduler.start()
-    print("Планировщик задач запущен.")
-
-# --- Главное меню кнопок ---
+# --- Кнопки меню ---
 def get_main_menu(is_admin=False):
-    """Возвращает кнопки для основного меню."""
+    """Возвращает меню для пользователя."""
     buttons = [[KeyboardButton("Моё расписание")]]
     if is_admin:
         buttons.append([
@@ -121,19 +128,10 @@ def get_main_menu(is_admin=False):
         ])
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 
-# --- Обработчик команды /start ---
-async def start(update: Update, context: CallbackContext):
-    """Обработка команды /start с выводом кнопок."""
-    user_id = update.effective_chat.id
-    is_admin = user_id == ADMIN_ID
 
-    # Отправляем клавиатуру с кнопками
-    await update.message.reply_text(
-        "Добро пожаловать! Выберите действие:",
-        reply_markup=get_main_menu(is_admin))
-# --- Обработчик текстовых сообщений (кнопок) ---
+# --- Обработчик кнопок ---
 async def button_handler(update: Update, context: CallbackContext):
-    """Обрабатывает нажатие кнопок."""
+    """Обрабатывает действия при нажатии кнопок."""
     user_id = update.effective_chat.id
     text = update.message.text
 
@@ -141,33 +139,41 @@ async def button_handler(update: Update, context: CallbackContext):
         await view_schedule(update, context)
     elif text == "Просмотреть всё расписание" and user_id == ADMIN_ID:
         await view_all(update, context)
-    elif text == "Редактировать расписание" and user_id == ADMIN_ID:
-        await update.message.reply_text("Для редактирования используйте команду /add_schedule.")
     elif text == "Сбросить расписание" and user_id == ADMIN_ID:
         reset_schedule()
-        await update.message.reply_text("Расписание сброшено к стандартному.")
+        await update.message.reply_text("Расписание успешно сброшено.")
     else:
-        await update.message.reply_text("Неизвестная команда. Используйте кнопки.")
+        await update.message.reply_text("Неизвестная команда. Пожалуйста, используйте кнопки.")
+
+
+# --- Планировщик задач ---
+def schedule_jobs():
+    """Настраивает планировщик задач."""
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(reset_schedule, CronTrigger(day_of_week="sat", hour=23, minute=0))
+    scheduler.start()
+    print("Планировщик задач запущен.")
+
 
 # --- Главная функция ---
 def main():
     global temporary_schedule
-    temporary_schedule = load_default_schedule()  # Загружаем расписание с GitHub
+    temporary_schedule = load_default_schedule()
 
-    # Инициализация бота
     app = Application.builder().token(BOT_TOKEN).build()
 
-    # Планировщик задач
-    schedule_jobs(app)
+    # Планировщик
+    schedule_jobs()
 
     # Обработчики команд
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("add_schedule", add_schedule))
     app.add_handler(CommandHandler("view_all", view_all))
+    app.add_handler(CommandHandler("add_schedule", add_schedule))
     app.add_handler(CommandHandler("reset", manual_reset))
+
+    # Обработчик текстовых сообщений
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, button_handler))
 
-    # Запуск бота
     print("Бот запущен...")
     app.run_polling()
 
