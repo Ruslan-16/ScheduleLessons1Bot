@@ -6,7 +6,9 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, CallbackContext, MessageHandler, filters
+from dotenv import load_dotenv
 
+load_dotenv()
 # --- Переменные окружения ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")  # Токен бота из переменной окружения
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))  # ID администратора
@@ -130,8 +132,7 @@ def main():
     temporary_schedule = load_default_schedule()
 
     # Инициализация бота
-    app = Application.builder().token("YOUR_TELEGRAM_BOT_TOKEN").build()
-
+    app = Application.builder().token(BOT_TOKEN).build()
     # Планировщик задач
     schedule_jobs(app)
 
