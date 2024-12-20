@@ -7,7 +7,7 @@ from apscheduler.triggers.cron import CronTrigger
 from dotenv import load_dotenv
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackContext, filters
-
+import pytz
 # Загрузка переменных окружения
 load_dotenv()
 
@@ -30,6 +30,20 @@ days_translation = {
     "Sunday": "Воскресенье"
 }
 user_data = {}  # Пустой словарь для хранения username -> chat_id
+# Устанавливаем временную зону для Москвы
+local_tz = pytz.timezone('Europe/Moscow')
+
+# Получаем текущее время в московской временной зоне
+now = datetime.now(local_tz)
+print(f"Текущее московское время: {now}")
+
+# Пример: преобразование времени занятия
+lesson_time_str = "10:00"  # Время занятия в локальном времени
+lesson_date = datetime.strptime(lesson_time_str, "%H:%M")
+
+# Локализуем время занятия в московской зоне
+lesson_datetime = local_tz.localize(lesson_date)
+print(f"Время занятия с локализацией: {lesson_datetime}")
 
 async def get_my_id(update: Update, context: CallbackContext):
     """Возвращает chat_id пользователя."""
