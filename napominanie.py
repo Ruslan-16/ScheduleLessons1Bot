@@ -20,38 +20,61 @@ GITHUB_RAW_URL = "https://raw.githubusercontent.com/Ruslan-16/ScheduleLessons1Bo
 temporary_schedule = {}  # Хранение оперативного расписания
 registered_users = []  # Список зарегистрированных пользователей
 list_days = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
+days_translation = {
+    "Monday": "Понедельник",
+    "Tuesday": "Вторник",
+    "Wednesday": "Среда",
+    "Thursday": "Четверг",
+    "Friday": "Пятница",
+    "Saturday": "Суббота",
+    "Sunday": "Воскресенье"
+}
+user_data = {}  # Пустой словарь для хранения username -> chat_id
+
+async def get_my_id(update: Update, context: CallbackContext):
+    """Возвращает chat_id пользователя."""
+    await update.message.reply_text(f"ADMIN_ID: {update.effective_chat.id}")
 
 async def send_reminders(application):
     """Проверяет расписание и отправляет напоминания ученикам."""
-    now = datetime.now()  # Текущее время
-    reminders_sent = []  # Для отладки, чтобы понять, кому отправлены напоминания
-    # Обходим каждого зарегистрированного ученика
+    now = datetime.now()
+    reminders_sent = []
+
     for user_name, lessons in temporary_schedule.items():
         for lesson in lessons:
             try:
-                # Извлекаем день недели и время из строки занятия
+                # Разбираем строку расписания
                 day, time_details = lesson.split(" ", 1)
-                lesson_time_str = time_details.split(" - ")[0]  # Извлекаем только время
-                lesson_time = datetime.strptime(lesson_time_str, "%H:%M").time()  # Преобразуем в объект времени
-                # Определяем дату следующего занятия
-                current_day = datetime.now().strftime("%A")  # Сегодняшний день недели
+                lesson_time_str = time_details.split(" - ")[0]
+                lesson_time = datetime.strptime(lesson_time_str, "%H:%M").time()
+
+                # Определяем дату занятия
+                current_day = days_translation[now.strftime("%A")]
                 days_to_lesson = (list_days.index(day) - list_days.index(current_day)) % 7
                 lesson_date = (now + timedelta(days=days_to_lesson)).date()
-                lesson_datetime = datetime.combine(lesson_date, lesson_time)  # Полная дата и время занятия
-                # Время для напоминания
+                lesson_datetime = datetime.combine(lesson_date, lesson_time)
+
+                # Напоминания
                 reminder_1h_before = lesson_datetime - timedelta(hours=1)
                 reminder_24h_before = lesson_datetime - timedelta(days=1)
-                # Проверяем, нужно ли отправить напоминание
-                if now >= reminder_1h_before and now < lesson_datetime:
-                    await application.bot.send_message(chat_id=user_name, text=f"Напоминание: у вас занятие через 1 час.\n{lesson}")
-                    reminders_sent.append((user_name, "1 час"))
-                elif now >= reminder_24h_before and now < reminder_1h_before:
-                    await application.bot.send_message(chat_id=user_name, text=f"Напоминание: у вас занятие через 24 часа.\n{lesson}")
-                    reminders_sent.append((user_name, "24 часа"))
+
+                # Проверяем напоминания
+                if reminder_1h_before <= now < lesson_datetime:
+                    chat_id = user_data.get(user_name)  # Находим chat_id по username
+                    if chat_id:
+                        await application.bot.send_message(chat_id=chat_id, text=f"Напоминание: у вас занятие через 1 час.\n{lesson}")
+                        reminders_sent.append((user_name, "1 час"))
+                elif reminder_24h_before <= now < reminder_1h_before:
+                    chat_id = user_data.get(user_name)  # Находим chat_id по username
+                    if chat_id:
+                        await application.bot.send_message(chat_id=chat_id, text=f"Напоминание: у вас занятие через 24 часа.\n{lesson}")
+                        reminders_sent.append((user_name, "24 часа"))
             except Exception as e:
                 print(f"Ошибка обработки занятия для {user_name}: {lesson}. Ошибка: {e}")
-    # Отладочный вывод для проверки
+
     print(f"[DEBUG] Напоминания отправлены: {reminders_sent}")
+
+
 # --- Функции загрузки расписания ---
 def load_default_schedule():
     """Загружает расписание с GitHub."""
@@ -78,32 +101,42 @@ def reset_schedule():
 # --- Функции обработки команд ---
 async def start(update: Update, context: CallbackContext):
     """Обработка команды /start."""
-    user_id = update.effective_chat.id
-    user_name = update.effective_chat.username  # Используем username
-    # Проверяем, есть ли username
+    user_id = update.effective_chat.id  # chat_id пользователя
+    user_name = update.effective_chat.username  # username пользователя
+
+    # Если username отсутствует
     if not user_name:
         await update.message.reply_text(
             "У вас не установлен username в Telegram. Пожалуйста, добавьте username в настройках Telegram и повторите попытку."
         )
         return
-    # Проверяем, есть ли username пользователя в расписании
+
+    # Добавляем администратора в user_data (если его нет)
+    if user_id == ADMIN_ID:
+        if user_name not in user_data:
+            user_data[user_name] = user_id
+        await update.message.reply_text(
+            "Добро пожаловать, администратор! Выберите действие:",
+            reply_markup=get_main_menu(is_admin=True)
+        )
+        return
+
+    # Проверяем, есть ли username в расписании
     if user_name not in temporary_schedule:
         await update.message.reply_text(
             "Извините, вас нет в расписании. Свяжитесь с администратором, если это ошибка."
         )
         return
-    # Добавляем пользователя в список зарегистрированных (если его нет)
-    if user_name not in registered_users:
-        registered_users.append(user_name)
-    # Отладочный вывод для проверки
-    print(f"[DEBUG] Registered users: {registered_users}")
-    print(f"[DEBUG] Current schedule: {temporary_schedule}")
 
-    # Отправляем клавиатуру
-    is_admin = user_id == ADMIN_ID
+    # Регистрируем пользователя
+    user_data[user_name] = user_id  # Связываем username с chat_id
+    print(f"[DEBUG] User data: {user_data}")
+    print(f"[DEBUG] Registered users: {list(user_data.keys())}")
+
+    # Ответ пользователю
     await update.message.reply_text(
-        "Добро пожаловать! Выберите действие:",
-        reply_markup=get_main_menu(is_admin)
+        "Добро пожаловать! Ваше расписание готово. Выберите действие:",
+        reply_markup=get_main_menu(False)
     )
 
 async def view_schedule(update: Update, context: CallbackContext):
@@ -123,10 +156,12 @@ async def view_students(update: Update, context: CallbackContext):
         await update.message.reply_text("У вас нет прав для выполнения этой команды.")
         return
 
-    if not registered_users:
+    if not user_data:
         await update.message.reply_text("Список зарегистрированных пользователей пуст.")
     else:
-        await update.message.reply_text("Список зарегистрированных пользователей:\n" + "\n".join(registered_users))
+        # Формируем сообщение со списком зарегистрированных пользователей
+        message = "\n".join([f"@{username}" for username in user_data.keys()])
+        await update.message.reply_text(f"Список зарегистрированных пользователей:\n{message}")
 
 async def view_all(update: Update, context: CallbackContext):
     """Показывает всё расписание (только для администратора)."""
@@ -213,6 +248,7 @@ async def button_handler(update: Update, context: CallbackContext):
 def schedule_jobs(application: Application):
     """Настраивает планировщик задач."""
     scheduler = BackgroundScheduler()
+
     # Задача: проверять расписание каждые 30 минут
     scheduler.add_job(
         send_reminders,
@@ -222,8 +258,10 @@ def schedule_jobs(application: Application):
     )
     # Задача: сбрасывать расписание каждую субботу в 23:00
     scheduler.add_job(reset_schedule, CronTrigger(day_of_week="sat", hour=23, minute=0))
+
     scheduler.start()
     print("Планировщик задач запущен.")
+
 # --- Главная функция ---
 def main():
     global temporary_schedule
@@ -240,6 +278,7 @@ def main():
     app.add_handler(CommandHandler("add_schedule", add_schedule))
     app.add_handler(CommandHandler("reset", manual_reset))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, button_handler))
+    app.add_handler(CommandHandler("get_my_id", get_my_id))
 
     print("Бот запущен...")
     app.run_polling()
