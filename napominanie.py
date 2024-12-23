@@ -50,8 +50,8 @@ async def get_my_id(update: Update, context: CallbackContext):
     await update.message.reply_text(f"ADMIN_ID: {update.effective_chat.id}")
 
 async def send_reminders(application):
-    """Проверяет расписание и отправляет напоминания ученикам."""
-    now = datetime.now()
+    """Проверяет расписание и отправляет напоминания ученикам за 1 час и за 24 часа."""
+    now = datetime.now(local_tz)  # Текущее время в московской зоне
     reminders_sent = []
 
     for user_name, lessons in temporary_schedule.items():
@@ -59,35 +59,45 @@ async def send_reminders(application):
             try:
                 # Разбираем строку расписания
                 day, time_details = lesson.split(" ", 1)
-                lesson_time_str = time_details.split(" - ")[0]
+                lesson_time_str = time_details.split(" - ")[0]  # Получаем время занятия (например, "10:00")
                 lesson_time = datetime.strptime(lesson_time_str, "%H:%M").time()
 
                 # Определяем дату занятия
-                current_day = days_translation[now.strftime("%A")]
+                current_day = days_translation[now.strftime("%A")]  # День недели сегодня
                 days_to_lesson = (list_days.index(day) - list_days.index(current_day)) % 7
-                lesson_date = (now + timedelta(days=days_to_lesson)).date()
-                lesson_datetime = datetime.combine(lesson_date, lesson_time)
+                lesson_date = (now + timedelta(days=days_to_lesson)).date()  # Дата следующего урока
+                lesson_datetime = datetime.combine(lesson_date, lesson_time).astimezone(local_tz)
 
-                # Напоминания
-                reminder_1h_before = lesson_datetime - timedelta(hours=1)
-                reminder_24h_before = lesson_datetime - timedelta(days=1)
+                # Временные метки напоминаний
+                reminder_1h_before = lesson_datetime - timedelta(hours=1)  # Напоминание за 1 час
+                reminder_24h_before = lesson_datetime - timedelta(days=1)  # Напоминание за 24 часа
 
-                # Проверяем напоминания
+                # Проверяем, нужно ли отправить напоминание
+                chat_id = user_data.get(user_name)  # Получаем chat_id ученика
+                if not chat_id:
+                    print(f"[DEBUG] chat_id не найден для пользователя: {user_name}")
+                    continue
+
                 if reminder_1h_before <= now < lesson_datetime:
-                    chat_id = user_data.get(user_name)  # Находим chat_id по username
-                    if chat_id:
-                        await application.bot.send_message(chat_id=chat_id, text=f"Напоминание: у вас занятие через 1 час.\n{lesson}")
-                        reminders_sent.append((user_name, "1 час"))
+                    # Напоминание за 1 час
+                    await application.bot.send_message(
+                        chat_id=chat_id,
+                        text=f"Напоминание: у вас занятие через 1 час.\n{lesson}"
+                    )
+                    reminders_sent.append((user_name, "1 час"))
+
                 elif reminder_24h_before <= now < reminder_1h_before:
-                    chat_id = user_data.get(user_name)  # Находим chat_id по username
-                    if chat_id:
-                        await application.bot.send_message(chat_id=chat_id, text=f"Напоминание: у вас занятие через 24 часа.\n{lesson}")
-                        reminders_sent.append((user_name, "24 часа"))
+                    # Напоминание за 24 часа
+                    await application.bot.send_message(
+                        chat_id=chat_id,
+                        text=f"Напоминание: у вас занятие через 24 часа.\n{lesson}"
+                    )
+                    reminders_sent.append((user_name, "24 часа"))
+
             except Exception as e:
                 print(f"Ошибка обработки занятия для {user_name}: {lesson}. Ошибка: {e}")
 
     print(f"[DEBUG] Напоминания отправлены: {reminders_sent}")
-
 
 # --- Функции загрузки расписания ---
 def load_default_schedule():
@@ -275,6 +285,7 @@ def schedule_jobs(application: Application):
 
     scheduler.start()
     print("Планировщик задач запущен.")
+
 
 # --- Главная функция ---
 def main():
