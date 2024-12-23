@@ -8,9 +8,11 @@ from dotenv import load_dotenv
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackContext, filters
 import pytz
+import logging
 # Загрузка переменных окружения
 load_dotenv()
-
+logging.basicConfig()
+logging.getLogger('apscheduler').setLevel(logging.DEBUG)
 # --- Переменные окружения ---
 BOT_TOKEN= "7843267156:AAHGuD8B4GAY73ECvkGWnoDIIQMrD6GCsLc"
 ADMIN_ID= 413537120
@@ -57,20 +59,22 @@ async def send_reminders(application):
     for user_name, lessons in temporary_schedule.items():
         for lesson in lessons:
             try:
-                # Разбираем строку расписания
-                day, time_details = lesson.split(" ", 1)
-                lesson_time_str = time_details.split(" - ")[0]  # Получаем время занятия (например, "10:00")
-                lesson_time = datetime.strptime(lesson_time_str, "%H:%M").time()
+                # Разбираем строку занятия
+                day, time_details = lesson.split(" ", 1)  # "Понедельник 8:15 - Грамматика, лексика"
+                lesson_time_str = time_details.split(" - ")[0]  # Получаем время занятия (например, "8:15")
 
-                # Определяем дату занятия
-                current_day = days_translation[now.strftime("%A")]  # День недели сегодня
+                # Определяем дату следующего занятия
+                current_day = days_translation[now.strftime("%A")]  # Сегодняшний день недели
                 days_to_lesson = (list_days.index(day) - list_days.index(current_day)) % 7
-                lesson_date = (now + timedelta(days=days_to_lesson)).date()  # Дата следующего урока
+                lesson_date = (now + timedelta(days=days_to_lesson)).date()  # Дата занятия
+
+                # Формируем полное время занятия
+                lesson_time = datetime.strptime(lesson_time_str, "%H:%M").time()
                 lesson_datetime = datetime.combine(lesson_date, lesson_time).astimezone(local_tz)
 
-                # Временные метки напоминаний
-                reminder_1h_before = lesson_datetime - timedelta(hours=1)  # Напоминание за 1 час
-                reminder_24h_before = lesson_datetime - timedelta(days=1)  # Напоминание за 24 часа
+                # Временные метки для напоминаний
+                reminder_1h_before = lesson_datetime - timedelta(hours=1)
+                reminder_24h_before = lesson_datetime - timedelta(days=1)
 
                 # Проверяем, нужно ли отправить напоминание
                 chat_id = user_data.get(user_name)  # Получаем chat_id ученика
