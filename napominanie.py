@@ -34,6 +34,13 @@ days_translation = {
     "Sunday": "Воскресенье"
 }
 user_data = {}  # Пустой словарь для хранения username -> chat_id
+# Время сервера
+server_time = datetime.now()
+print(f"Серверное время: {server_time}")
+# Московское время
+moscow_tz = pytz.timezone('Europe/Moscow')
+moscow_time = datetime.now(moscow_tz)
+print(f"Московское время: {moscow_time}")
 # Устанавливаем временную зону для Москвы
 local_tz = pytz.timezone('Europe/Moscow')
 
