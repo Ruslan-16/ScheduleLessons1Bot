@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import requests
 from datetime import datetime, timedelta
@@ -9,6 +10,7 @@ from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackContext, filters
 import pytz
 import logging
+import signal
 # Загрузка переменных окружения
 load_dotenv()
 logging.basicConfig()
@@ -39,14 +41,6 @@ local_tz = pytz.timezone('Europe/Moscow')
 now = datetime.now(local_tz)
 print(f"Текущее московское время: {now}")
 
-# Пример: преобразование времени занятия
-lesson_time_str = "10:00"  # Время занятия в локальном времени
-lesson_date = datetime.strptime(lesson_time_str, "%H:%M")
-
-# Локализуем время занятия в московской зоне
-lesson_datetime = local_tz.localize(lesson_date)
-print(f"Время занятия с локализацией: {lesson_datetime}")
-
 async def get_my_id(update: Update, context: CallbackContext):
     """Возвращает chat_id пользователя."""
     await update.message.reply_text(f"ADMIN_ID: {update.effective_chat.id}")
@@ -60,21 +54,26 @@ async def send_reminders(application):
         for lesson in lessons:
             try:
                 # Разбираем строку занятия
-                day, time_details = lesson.split(" ", 1)  # "Понедельник 8:15 - Грамматика, лексика"
+                day, time_details = lesson.split(" ", 1)  # Например: "Понедельник 8:15 - Грамматика, лексика"
                 lesson_time_str = time_details.split(" - ")[0]  # Получаем время занятия (например, "8:15")
 
-                # Определяем дату следующего занятия
+                # Вычисляем ближайшую дату занятия
                 current_day = days_translation[now.strftime("%A")]  # Сегодняшний день недели
-                days_to_lesson = (list_days.index(day) - list_days.index(current_day)) % 7
+                days_to_lesson = (list_days.index(day) - list_days.index(current_day)) % 7  # Дни до занятия
                 lesson_date = (now + timedelta(days=days_to_lesson)).date()  # Дата занятия
 
-                # Формируем полное время занятия
-                lesson_time = datetime.strptime(lesson_time_str, "%H:%M").time()
-                lesson_datetime = datetime.combine(lesson_date, lesson_time).astimezone(local_tz)
+                # Вычисляем точное время занятия
+                lesson_time = datetime.strptime(lesson_time_str, "%H:%M").time()  # Например, "8:15"
+                lesson_datetime = datetime.combine(lesson_date, lesson_time).astimezone(local_tz)  # Полное время с локализацией
 
                 # Временные метки для напоминаний
                 reminder_1h_before = lesson_datetime - timedelta(hours=1)
                 reminder_24h_before = lesson_datetime - timedelta(days=1)
+
+                # Отладочный вывод
+                print(f"[DEBUG] lesson_datetime: {lesson_datetime}")
+                print(f"[DEBUG] reminder_1h_before: {reminder_1h_before}, reminder_24h_before: {reminder_24h_before}")
+                print(f"[DEBUG] now: {now}")
 
                 # Проверяем, нужно ли отправить напоминание
                 chat_id = user_data.get(user_name)  # Получаем chat_id ученика
@@ -102,6 +101,11 @@ async def send_reminders(application):
                 print(f"Ошибка обработки занятия для {user_name}: {lesson}. Ошибка: {e}")
 
     print(f"[DEBUG] Напоминания отправлены: {reminders_sent}")
+    print(f"[DEBUG] lesson_datetime: {lesson_datetime}")
+    print(f"[DEBUG] reminder_1h_before: {reminder_1h_before}")
+    print(f"[DEBUG] reminder_24h_before: {reminder_24h_before}")
+    print(f"[DEBUG] now: {now}")
+
 
 # --- Функции загрузки расписания ---
 def load_default_schedule():
@@ -275,20 +279,23 @@ async def button_handler(update: Update, context: CallbackContext):
 # --- Планировщик задач ---
 def schedule_jobs(application: Application):
     """Настраивает планировщик задач."""
-    scheduler = BackgroundScheduler()
+    try:
+        scheduler = BackgroundScheduler()
 
-    # Задача: проверять расписание каждые 30 минут
-    scheduler.add_job(
-        send_reminders,
-        trigger="interval",
-        minutes=30,
-        args=[application]
-    )
-    # Задача: сбрасывать расписание каждую субботу в 23:00
-    scheduler.add_job(reset_schedule, CronTrigger(day_of_week="sat", hour=23, minute=0))
+        # Задача: проверять расписание каждые 30 минут
+        scheduler.add_job(
+            send_reminders,
+            trigger="interval",
+            minutes=30,
+            args=[application]
+        )
+        # Задача: сбрасывать расписание каждую субботу в 23:00
+        scheduler.add_job(reset_schedule, CronTrigger(day_of_week="sat", hour=23, minute=0))
 
-    scheduler.start()
-    print("Планировщик задач запущен.")
+        scheduler.start()
+        print("Планировщик задач запущен.")
+    except Exception as e:
+        print(f"Ошибка при запуске планировщика: {e}")
 
 
 # --- Главная функция ---
@@ -308,6 +315,15 @@ def main():
     app.add_handler(CommandHandler("reset", manual_reset))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, button_handler))
     app.add_handler(CommandHandler("get_my_id", get_my_id))
+
+    # Обрабатываем сигнал завершения
+    def shutdown_handler(sig, frame):
+        print("Остановка бота...")
+        app.stop()  # Останавливаем приложение
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, shutdown_handler)
+    signal.signal(signal.SIGTERM, shutdown_handler)
 
     print("Бот запущен...")
     app.run_polling()
