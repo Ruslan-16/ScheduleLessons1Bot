@@ -3,6 +3,8 @@ import sys
 import json
 import requests
 from datetime import datetime, timedelta
+from apscheduler.executors.asyncio import AsyncIOExecutor
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from dotenv import load_dotenv
@@ -11,6 +13,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackCo
 import pytz
 import logging
 import signal
+import asyncio
 # Загрузка переменных окружения
 load_dotenv()
 logging.basicConfig()
@@ -19,7 +22,6 @@ logging.getLogger('apscheduler').setLevel(logging.DEBUG)
 BOT_TOKEN= "7843267156:AAHGuD8B4GAY73ECvkGWnoDIIQMrD6GCsLc"
 ADMIN_ID= 413537120
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/Ruslan-16/ScheduleLessons1Bot/refs/heads/main/users.json"
-
 # --- Глобальные переменные ---
 temporary_schedule = {}  # Хранение оперативного расписания
 registered_users = []  # Список зарегистрированных пользователей
@@ -43,7 +45,6 @@ moscow_time = datetime.now(moscow_tz)
 print(f"Московское время: {moscow_time}")
 # Устанавливаем временную зону для Москвы
 local_tz = pytz.timezone('Europe/Moscow')
-
 # Получаем текущее время в московской временной зоне
 now = datetime.now(local_tz)
 print(f"Текущее московское время: {now}")
@@ -54,42 +55,43 @@ async def get_my_id(update: Update, context: CallbackContext):
 
 async def send_reminders(application):
     """Проверяет расписание и отправляет напоминания ученикам за 1 час и за 24 часа."""
+    await update_user_data()  # Обновляем список зарегистрированных пользователей перед отправкой напоминаний
+
     now = datetime.now(local_tz)  # Текущее время в московской зоне
     reminders_sent = []
 
+    print(f"[DEBUG] send_reminders запущен в {now}")
+
     for user_name, lessons in temporary_schedule.items():
+        # Проверяем, зарегистрирован ли пользователь
+        if user_name not in user_data:
+            print(f"[DEBUG] Пользователь {user_name} не зарегистрирован. Пропускаем.")
+            continue
+
+        # Получаем chat_id пользователя
+        chat_id = user_data[user_name]
+
         for lesson in lessons:
             try:
                 # Разбираем строку занятия
-                day, time_details = lesson.split(" ", 1)  # Например: "Понедельник 8:15 - Грамматика, лексика"
-                lesson_time_str = time_details.split(" - ")[0]  # Получаем время занятия (например, "8:15")
+                day, time_details = lesson.split(" ", 1)
+                lesson_time_str = time_details.split(" - ")[0]  # Например, "8:15"
 
                 # Вычисляем ближайшую дату занятия
-                current_day = days_translation[now.strftime("%A")]  # Сегодняшний день недели
-                days_to_lesson = (list_days.index(day) - list_days.index(current_day)) % 7  # Дни до занятия
-                lesson_date = (now + timedelta(days=days_to_lesson)).date()  # Дата занятия
+                current_day = days_translation[now.strftime("%A")]
+                days_to_lesson = (list_days.index(day) - list_days.index(current_day)) % 7
+                lesson_date = (now + timedelta(days=days_to_lesson)).date()
 
                 # Вычисляем точное время занятия
-                lesson_time = datetime.strptime(lesson_time_str, "%H:%M").time()  # Например, "8:15"
-                lesson_datetime = datetime.combine(lesson_date, lesson_time).astimezone(local_tz)  # Полное время с локализацией
+                lesson_time = datetime.strptime(lesson_time_str, "%H:%M").time()
+                lesson_datetime = datetime.combine(lesson_date, lesson_time).astimezone(local_tz)
 
                 # Временные метки для напоминаний
                 reminder_1h_before = lesson_datetime - timedelta(hours=1)
                 reminder_24h_before = lesson_datetime - timedelta(days=1)
 
-                # Отладочный вывод
-                print(f"[DEBUG] lesson_datetime: {lesson_datetime}")
-                print(f"[DEBUG] reminder_1h_before: {reminder_1h_before}, reminder_24h_before: {reminder_24h_before}")
-                print(f"[DEBUG] now: {now}")
-
                 # Проверяем, нужно ли отправить напоминание
-                chat_id = user_data.get(user_name)  # Получаем chat_id ученика
-                if not chat_id:
-                    print(f"[DEBUG] chat_id не найден для пользователя: {user_name}")
-                    continue
-
                 if reminder_1h_before <= now < lesson_datetime:
-                    # Напоминание за 1 час
                     await application.bot.send_message(
                         chat_id=chat_id,
                         text=f"Напоминание: у вас занятие через 1 час.\n{lesson}"
@@ -97,7 +99,6 @@ async def send_reminders(application):
                     reminders_sent.append((user_name, "1 час"))
 
                 elif reminder_24h_before <= now < reminder_1h_before:
-                    # Напоминание за 24 часа
                     await application.bot.send_message(
                         chat_id=chat_id,
                         text=f"Напоминание: у вас занятие через 24 часа.\n{lesson}"
@@ -108,12 +109,6 @@ async def send_reminders(application):
                 print(f"Ошибка обработки занятия для {user_name}: {lesson}. Ошибка: {e}")
 
     print(f"[DEBUG] Напоминания отправлены: {reminders_sent}")
-    print(f"[DEBUG] lesson_datetime: {lesson_datetime}")
-    print(f"[DEBUG] reminder_1h_before: {reminder_1h_before}")
-    print(f"[DEBUG] reminder_24h_before: {reminder_24h_before}")
-    print(f"[DEBUG] now: {now}")
-
-
 # --- Функции загрузки расписания ---
 def load_default_schedule():
     """Загружает расписание с GitHub."""
@@ -136,24 +131,22 @@ def reset_schedule():
     global temporary_schedule
     temporary_schedule = load_default_schedule()
     print("Текущее расписание после сброса:", temporary_schedule)  # Отладочный вывод
-
 # --- Функции обработки команд ---
 async def start(update: Update, context: CallbackContext):
     """Обработка команды /start."""
-    user_id = update.effective_chat.id  # chat_id пользователя
-    user_name = update.effective_chat.username  # username пользователя
+    user_id = update.effective_chat.id
+    user_name = update.effective_chat.username
 
-    # Если username отсутствует
     if not user_name:
         await update.message.reply_text(
             "У вас не установлен username в Telegram. Пожалуйста, добавьте username в настройках Telegram и повторите попытку."
         )
         return
 
-    # Добавляем администратора в user_data (если его нет)
+    # Добавляем администратора в user_data
     if user_id == ADMIN_ID:
-        if user_name not in user_data:
-            user_data[user_name] = user_id
+        user_data[user_name] = user_id
+        print(f"[DEBUG] Администратор добавлен в user_data: {user_name} -> {user_id}")
         await update.message.reply_text(
             "Добро пожаловать, администратор! Выберите действие:",
             reply_markup=get_main_menu(is_admin=True)
@@ -168,15 +161,22 @@ async def start(update: Update, context: CallbackContext):
         return
 
     # Регистрируем пользователя
-    user_data[user_name] = user_id  # Связываем username с chat_id
-    print(f"[DEBUG] User data: {user_data}")
-    print(f"[DEBUG] Registered users: {list(user_data.keys())}")
+    user_data[user_name] = user_id
+    print(f"[DEBUG] User {user_name} добавлен в user_data: {user_name} -> {user_id}")
 
-    # Ответ пользователю
+    # Немедленно обновляем user_data
+    await update_user_data()
+
     await update.message.reply_text(
         "Добро пожаловать! Ваше расписание готово. Выберите действие:",
-        reply_markup=get_main_menu(False)
+        reply_markup=get_main_menu(is_admin=False)
     )
+
+async def update_user_data():
+    """Обновляет список зарегистрированных пользователей."""
+    global user_data
+    # Здесь вы можете реализовать дополнительную логику проверки пользователей, если потребуется.
+    print("[DEBUG] user_data обновлено:", user_data)
 
 async def view_schedule(update: Update, context: CallbackContext):
     """Показывает расписание для конкретного ученика."""
@@ -194,6 +194,8 @@ async def view_students(update: Update, context: CallbackContext):
     if update.effective_chat.id != ADMIN_ID:
         await update.message.reply_text("У вас нет прав для выполнения этой команды.")
         return
+
+    print(f"[DEBUG] user_data перед выводом учеников: {user_data}")
 
     if not user_data:
         await update.message.reply_text("Список зарегистрированных пользователей пуст.")
@@ -246,7 +248,6 @@ async def add_schedule(update: Update, context: CallbackContext):
         await update.message.reply_text(f"Расписание для {user_id} обновлено:\n{lesson}")
     except (IndexError, ValueError):
         await update.message.reply_text("Использование команды:\n/add_schedule user_id день время - занятие")
-
 # --- Кнопки меню ---
 def get_main_menu(is_admin=False):
     """Создаёт меню клавиатуры."""
@@ -261,7 +262,6 @@ def get_main_menu(is_admin=False):
         # Кнопки для ученика
         buttons = [[KeyboardButton("Моё расписание")]]
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
-
 # --- Обработчик кнопок ---
 async def button_handler(update: Update, context: CallbackContext):
     """Обрабатывает действия при нажатии кнопок."""
@@ -282,29 +282,47 @@ async def button_handler(update: Update, context: CallbackContext):
     else:
         # Обработка неизвестной команды
         await update.message.reply_text("Неизвестная команда. Пожалуйста, используйте кнопки.")
-
 # --- Планировщик задач ---
 def schedule_jobs(application: Application):
     """Настраивает планировщик задач."""
+    # Создаём планировщик для работы с асинхронными задачами
+    scheduler = AsyncIOScheduler()
+
+    # Задача: отправка напоминаний каждые 30 минут
+    scheduler.add_job(
+        send_reminders,
+        trigger="interval",
+        minutes=30,
+        args=[application],
+        id="send_reminders"
+    )
+
+    # Задача: сброс расписания каждую субботу в 23:00
+    scheduler.add_job(
+        reset_schedule,
+        CronTrigger(day_of_week="sat", hour=23, minute=0),
+        id="reset_schedule"
+    )
+
+    # Задача: обновление user_data каждые 5 минут
+    scheduler.add_job(
+        update_user_data,  # Асинхронная функция вызывается напрямую
+        trigger="interval",
+        minutes=5,
+        id="update_user_data"
+    )
+
+    # Запускаем планировщик
+    scheduler.start()
+    print("Планировщик задач запущен.")
+
+async def test_send_message(application):
+    """Тест отправки сообщения админу."""
     try:
-        scheduler = BackgroundScheduler()
-
-        # Задача: проверять расписание каждые 30 минут
-        scheduler.add_job(
-            send_reminders,
-            trigger="interval",
-            minutes=30,
-            args=[application]
-        )
-        # Задача: сбрасывать расписание каждую субботу в 23:00
-        scheduler.add_job(reset_schedule, CronTrigger(day_of_week="sat", hour=23, minute=0))
-
-        scheduler.start()
-        print("Планировщик задач запущен.")
+        await application.bot.send_message(chat_id=ADMIN_ID, text="Тестовое сообщение!")
+        print("[DEBUG] Тестовое сообщение отправлено успешно.")
     except Exception as e:
-        print(f"Ошибка при запуске планировщика: {e}")
-
-
+        print(f"[ERROR] Ошибка отправки тестового сообщения: {e}")
 # --- Главная функция ---
 def main():
     global temporary_schedule
@@ -314,7 +332,6 @@ def main():
 
     # Настраиваем планировщик
     schedule_jobs(app)
-
     # Регистрируем команды и обработчики
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("view_all", view_all))
@@ -322,15 +339,6 @@ def main():
     app.add_handler(CommandHandler("reset", manual_reset))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, button_handler))
     app.add_handler(CommandHandler("get_my_id", get_my_id))
-
-    # Обрабатываем сигнал завершения
-    def shutdown_handler(sig, frame):
-        print("Остановка бота...")
-        app.stop()  # Останавливаем приложение
-        sys.exit(0)
-
-    signal.signal(signal.SIGINT, shutdown_handler)
-    signal.signal(signal.SIGTERM, shutdown_handler)
 
     print("Бот запущен...")
     app.run_polling()
