@@ -58,8 +58,7 @@ async def send_reminders(application):
     await update_user_data()  # Обновляем список зарегистрированных пользователей перед отправкой напоминаний
 
     now = datetime.now(local_tz)  # Текущее время в московской зоне
-    reminders_sent = []
-
+    reminders_sent = []  # Лог отправленных напоминаний
     print(f"[DEBUG] send_reminders запущен в {now}")
 
     for user_name, lessons in temporary_schedule.items():
@@ -75,29 +74,30 @@ async def send_reminders(application):
             try:
                 # Разбираем строку занятия
                 day, time_details = lesson.split(" ", 1)
-                lesson_time_str = time_details.split(" - ")[0]  # Например, "8:15"
+                lesson_time_str = time_details.split(" - ")[0]  # Например, "12:00"
 
-                # Определяем день занятия и ближайшую дату
-                current_day = days_translation[now.strftime("%A")]  # Текущий день на русском
-                lesson_day_index = list_days.index(day)
-                current_day_index = list_days.index(current_day)
+                # Определяем ближайшую дату занятия
+                current_day = days_translation[now.strftime("%A")]  # Сегодняшний день недели на русском
+                lesson_day_index = list_days.index(day)  # Индекс дня занятия
+                current_day_index = list_days.index(current_day)  # Индекс текущего дня
 
-                # Если занятие сегодня, проверяем время
+                # Логика определения ближайшего занятия
                 if lesson_day_index == current_day_index:
+                    # Занятие сегодня, проверяем время
                     lesson_date = now.date()
-                    # Если текущее время позже времени занятия, переносим на следующий день
                     if now.time() > datetime.strptime(lesson_time_str, "%H:%M").time():
+                        # Если текущее время позже времени занятия, переносим на следующую неделю
                         lesson_date += timedelta(days=7)
                 elif lesson_day_index > current_day_index:
-                    # Если занятие позже в этой неделе
+                    # Занятие позже на этой неделе
                     days_to_lesson = lesson_day_index - current_day_index
-                    lesson_date = (now + timedelta(days=days_to_lesson)).date()
+                    lesson_date = now.date() + timedelta(days=days_to_lesson)
                 else:
-                    # Если занятие на следующей неделе
+                    # Занятие на следующей неделе
                     days_to_lesson = 7 - (current_day_index - lesson_day_index)
-                    lesson_date = (now + timedelta(days=days_to_lesson)).date()
+                    lesson_date = now.date() + timedelta(days=days_to_lesson)
 
-                # Вычисляем точное время занятия
+                # Формируем дату и время занятия
                 lesson_time = datetime.strptime(lesson_time_str, "%H:%M").time()
                 lesson_datetime = datetime.combine(lesson_date, lesson_time).astimezone(local_tz)
 
@@ -107,18 +107,22 @@ async def send_reminders(application):
 
                 # Проверяем, нужно ли отправить напоминание
                 if reminder_1h_before <= now < lesson_datetime:
-                    await application.bot.send_message(
-                        chat_id=chat_id,
-                        text=f"Напоминание: у вас занятие через 1 час.\n{lesson}"
-                    )
-                    reminders_sent.append((user_name, "1 час"))
+                    # Напоминание за 1 час
+                    if (user_name, lesson, "1 час") not in reminders_sent:
+                        await application.bot.send_message(
+                            chat_id=chat_id,
+                            text=f"Напоминание: у вас занятие через 1 час.\n{lesson}"
+                        )
+                        reminders_sent.append((user_name, lesson, "1 час"))
 
                 elif reminder_24h_before <= now < reminder_1h_before:
-                    await application.bot.send_message(
-                        chat_id=chat_id,
-                        text=f"Напоминание: у вас занятие через 24 часа.\n{lesson}"
-                    )
-                    reminders_sent.append((user_name, "24 часа"))
+                    # Напоминание за 24 часа
+                    if (user_name, lesson, "24 часа") not in reminders_sent:
+                        await application.bot.send_message(
+                            chat_id=chat_id,
+                            text=f"Напоминание: у вас занятие через 24 часа.\n{lesson}"
+                        )
+                        reminders_sent.append((user_name, lesson, "24 часа"))
 
             except Exception as e:
                 print(f"Ошибка обработки занятия для {user_name}: {lesson}. Ошибка: {e}")
