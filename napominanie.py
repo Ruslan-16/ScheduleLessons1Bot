@@ -285,7 +285,7 @@ async def button_handler(update: Update, context: CallbackContext):
 # --- Планировщик задач ---
 def schedule_jobs(application: Application):
     """Настраивает планировщик задач."""
-    scheduler = AsyncIOScheduler()  # Используем асинхронный планировщик
+    scheduler = AsyncIOScheduler(event_loop=asyncio.get_event_loop())  # Передаём текущий event loop
 
     # Задача: отправлять напоминания каждые 30 минут
     scheduler.add_job(
@@ -338,4 +338,4 @@ def main():
     app.run_polling()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
