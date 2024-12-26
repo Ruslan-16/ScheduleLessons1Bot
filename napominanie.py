@@ -77,10 +77,25 @@ async def send_reminders(application):
                 day, time_details = lesson.split(" ", 1)
                 lesson_time_str = time_details.split(" - ")[0]  # Например, "8:15"
 
-                # Вычисляем ближайшую дату занятия
-                current_day = days_translation[now.strftime("%A")]
-                days_to_lesson = (list_days.index(day) - list_days.index(current_day)) % 7
-                lesson_date = (now + timedelta(days=days_to_lesson)).date()
+                # Определяем день занятия и ближайшую дату
+                current_day = days_translation[now.strftime("%A")]  # Текущий день на русском
+                lesson_day_index = list_days.index(day)
+                current_day_index = list_days.index(current_day)
+
+                # Если занятие сегодня, проверяем время
+                if lesson_day_index == current_day_index:
+                    lesson_date = now.date()
+                    # Если текущее время позже времени занятия, переносим на следующий день
+                    if now.time() > datetime.strptime(lesson_time_str, "%H:%M").time():
+                        lesson_date += timedelta(days=7)
+                elif lesson_day_index > current_day_index:
+                    # Если занятие позже в этой неделе
+                    days_to_lesson = lesson_day_index - current_day_index
+                    lesson_date = (now + timedelta(days=days_to_lesson)).date()
+                else:
+                    # Если занятие на следующей неделе
+                    days_to_lesson = 7 - (current_day_index - lesson_day_index)
+                    lesson_date = (now + timedelta(days=days_to_lesson)).date()
 
                 # Вычисляем точное время занятия
                 lesson_time = datetime.strptime(lesson_time_str, "%H:%M").time()
@@ -109,6 +124,7 @@ async def send_reminders(application):
                 print(f"Ошибка обработки занятия для {user_name}: {lesson}. Ошибка: {e}")
 
     print(f"[DEBUG] Напоминания отправлены: {reminders_sent}")
+
 # --- Функции загрузки расписания ---
 def load_default_schedule():
     """Загружает расписание с GitHub."""
