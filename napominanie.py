@@ -285,36 +285,30 @@ async def button_handler(update: Update, context: CallbackContext):
 # --- Планировщик задач ---
 def schedule_jobs(application: Application):
     """Настраивает планировщик задач."""
-    # Создаём планировщик для работы с асинхронными задачами
-    scheduler = AsyncIOScheduler()
+    scheduler = AsyncIOScheduler()  # Используем асинхронный планировщик
 
-    # Задача: отправка напоминаний каждые 30 минут
+    # Задача: отправлять напоминания каждые 30 минут
     scheduler.add_job(
-        send_reminders,
+        lambda: asyncio.create_task(send_reminders(application)),
         trigger="interval",
         minutes=30,
-        args=[application],
         id="send_reminders"
     )
 
-    # Задача: сброс расписания каждую субботу в 23:00
-    scheduler.add_job(
-        reset_schedule,
-        CronTrigger(day_of_week="sat", hour=23, minute=0),
-        id="reset_schedule"
-    )
+    # Задача: сбрасывать расписание каждую субботу в 23:00
+    scheduler.add_job(reset_schedule, CronTrigger(day_of_week="sat", hour=23, minute=0), id="reset_schedule")
 
-    # Задача: обновление user_data каждые 5 минут
+    # Задача: обновлять список зарегистрированных пользователей каждые 5 минут
     scheduler.add_job(
-        update_user_data,  # Асинхронная функция вызывается напрямую
+        lambda: asyncio.create_task(update_user_data()),
         trigger="interval",
         minutes=5,
         id="update_user_data"
     )
 
-    # Запускаем планировщик
     scheduler.start()
     print("Планировщик задач запущен.")
+
 
 async def test_send_message(application):
     """Тест отправки сообщения админу."""
