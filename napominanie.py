@@ -285,22 +285,27 @@ async def button_handler(update: Update, context: CallbackContext):
 # --- Планировщик задач ---
 def schedule_jobs(application: Application):
     """Настраивает планировщик задач."""
-    scheduler = AsyncIOScheduler(event_loop=asyncio.get_event_loop())  # Передаём текущий event loop
+    scheduler = AsyncIOScheduler(event_loop=asyncio.get_event_loop())  # Используем текущий event loop
 
     # Задача: отправлять напоминания каждые 30 минут
     scheduler.add_job(
-        lambda: asyncio.create_task(send_reminders(application)),
+        send_reminders,  # Вызываем напрямую (без lambda)
         trigger="interval",
         minutes=30,
+        args=[application],  # Передаём приложение в аргументах
         id="send_reminders"
     )
 
     # Задача: сбрасывать расписание каждую субботу в 23:00
-    scheduler.add_job(reset_schedule, CronTrigger(day_of_week="sat", hour=23, minute=0), id="reset_schedule")
+    scheduler.add_job(
+        reset_schedule,
+        CronTrigger(day_of_week="sat", hour=23, minute=0),
+        id="reset_schedule"
+    )
 
     # Задача: обновлять список зарегистрированных пользователей каждые 5 минут
     scheduler.add_job(
-        lambda: asyncio.create_task(update_user_data()),
+        update_user_data,  # Вызываем напрямую
         trigger="interval",
         minutes=5,
         id="update_user_data"
@@ -308,7 +313,6 @@ def schedule_jobs(application: Application):
 
     scheduler.start()
     print("Планировщик задач запущен.")
-
 
 async def test_send_message(application):
     """Тест отправки сообщения админу."""
@@ -339,3 +343,4 @@ def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
