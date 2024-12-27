@@ -57,9 +57,11 @@ sent_reminders = set()
 
 async def send_reminders(application):
     """Отправляет напоминания за 1 час и за 24 часа до занятий."""
-    global sent_reminders  # Используем глобальную переменную для хранения отправленных напоминаний
+    await update_user_data()  # Обновляем список зарегистрированных пользователей перед отправкой напоминаний
 
     now = datetime.now(local_tz)  # Текущее время в московской зоне
+    global sent_reminders  # Используем глобальную переменную для хранения отправленных напоминаний
+
     print(f"[DEBUG] send_reminders запущен в {now}")
 
     for user_name, lessons in temporary_schedule.items():
@@ -106,17 +108,25 @@ async def send_reminders(application):
                 reminder_1h_before = lesson_datetime - timedelta(hours=1)
                 reminder_24h_before = lesson_datetime - timedelta(days=1)
 
+                # --- Отладочные выводы ---
+                print(f"[DEBUG] Обработка занятия для пользователя: {user_name}")
+                print(f"[DEBUG] Занятие: {lesson}")
+                print(f"[DEBUG] lesson_datetime: {lesson_datetime}")
+                print(f"[DEBUG] reminder_1h_before: {reminder_1h_before}")
+                print(f"[DEBUG] reminder_24h_before: {reminder_24h_before}")
+                print(f"[DEBUG] now: {now}")
+
                 # Создаём уникальный ключ для напоминания
                 reminder_key_1h = (user_name, lesson_datetime, "1 час")
                 reminder_key_24h = (user_name, lesson_datetime, "24 часа")
 
-                # Проверяем и отправляем напоминания
+                # Проверяем, нужно ли отправить напоминание
                 if reminder_1h_before <= now < lesson_datetime and reminder_key_1h not in sent_reminders:
                     await application.bot.send_message(
                         chat_id=chat_id,
                         text=f"Напоминание: у вас занятие через 1 час.\n{lesson}"
                     )
-                    sent_reminders.add(reminder_key_1h)  # Добавляем напоминание в список отправленных
+                    sent_reminders.add(reminder_key_1h)
                     print(f"[DEBUG] Напоминание за 1 час отправлено: {user_name}, {lesson_datetime}")
 
                 elif reminder_24h_before <= now < reminder_1h_before and reminder_key_24h not in sent_reminders:
@@ -124,7 +134,7 @@ async def send_reminders(application):
                         chat_id=chat_id,
                         text=f"Напоминание: у вас занятие через 24 часа.\n{lesson}"
                     )
-                    sent_reminders.add(reminder_key_24h)  # Добавляем напоминание в список отправленных
+                    sent_reminders.add(reminder_key_24h)
                     print(f"[DEBUG] Напоминание за 24 часа отправлено: {user_name}, {lesson_datetime}")
 
             except Exception as e:
