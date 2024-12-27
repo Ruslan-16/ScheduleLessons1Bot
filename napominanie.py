@@ -62,6 +62,10 @@ async def send_reminders(application):
     now = datetime.now(local_tz)  # Текущее время в московской зоне
     global sent_reminders  # Используем глобальную переменную для хранения отправленных напоминаний
 
+    # Очистка устаревших напоминаний
+    sent_reminders = {key for key in sent_reminders if key[1] > now}
+    print(f"[DEBUG] Устаревшие напоминания удалены. Текущие: {sent_reminders}")
+
     print(f"[DEBUG] send_reminders запущен в {now}")
 
     for user_name, lessons in temporary_schedule.items():
