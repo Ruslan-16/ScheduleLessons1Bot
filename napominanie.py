@@ -62,10 +62,6 @@ async def send_reminders(application):
     now = datetime.now(local_tz)  # Текущее время в московской зоне
     global sent_reminders  # Используем глобальную переменную для хранения отправленных напоминаний
 
-    # Очистка устаревших напоминаний
-    sent_reminders = {key for key in sent_reminders if key[1] > now}
-    print(f"[DEBUG] Устаревшие напоминания удалены. Текущие: {sent_reminders}")
-
     print(f"[DEBUG] send_reminders запущен в {now}")
 
     for user_name, lessons in temporary_schedule.items():
@@ -142,7 +138,6 @@ async def send_reminders(application):
                         )
                         sent_reminders.add(reminder_key_24h)
                         print(f"[DEBUG] Напоминание за 24 часа отправлено: {user_name}, {lesson_datetime}")
-
 
             except Exception as e:
                 print(f"[ERROR] Ошибка обработки занятия для {user_name}: {lesson}. Ошибка: {e}")
