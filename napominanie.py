@@ -125,21 +125,24 @@ async def send_reminders(application):
                 reminder_key_24h = (user_name, lesson_datetime, "24 часа")
 
                 # Проверяем, нужно ли отправить напоминание
-                if reminder_1h_before <= now < lesson_datetime and reminder_key_1h not in sent_reminders:
-                    await application.bot.send_message(
-                        chat_id=chat_id,
-                        text=f"Напоминание: у вас занятие через 1 час.\n{lesson}"
-                    )
-                    sent_reminders.add(reminder_key_1h)
-                    print(f"[DEBUG] Напоминание за 1 час отправлено: {user_name}, {lesson_datetime}")
+                if reminder_1h_before <= now < lesson_datetime:
+                    if reminder_key_1h not in sent_reminders:
+                        await application.bot.send_message(
+                            chat_id=chat_id,
+                            text=f"Напоминание: у вас занятие через 1 час.\n{lesson}"
+                        )
+                        sent_reminders.add(reminder_key_1h)
+                        print(f"[DEBUG] Напоминание за 1 час отправлено: {user_name}, {lesson_datetime}")
 
-                elif reminder_24h_before <= now < reminder_1h_before and reminder_key_24h not in sent_reminders:
-                    await application.bot.send_message(
-                        chat_id=chat_id,
-                        text=f"Напоминание: у вас занятие через 24 часа.\n{lesson}"
-                    )
-                    sent_reminders.add(reminder_key_24h)
-                    print(f"[DEBUG] Напоминание за 24 часа отправлено: {user_name}, {lesson_datetime}")
+                elif reminder_24h_before <= now < lesson_datetime - timedelta(hours=1):
+                    if reminder_key_24h not in sent_reminders:
+                        await application.bot.send_message(
+                            chat_id=chat_id,
+                            text=f"Напоминание: у вас занятие через 24 часа.\n{lesson}"
+                        )
+                        sent_reminders.add(reminder_key_24h)
+                        print(f"[DEBUG] Напоминание за 24 часа отправлено: {user_name}, {lesson_datetime}")
+
 
             except Exception as e:
                 print(f"[ERROR] Ошибка обработки занятия для {user_name}: {lesson}. Ошибка: {e}")
