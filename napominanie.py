@@ -114,19 +114,20 @@ async def send_reminders(application):
                 reminder_key_24h = (user_name, lesson_datetime.isoformat(), "24 часа")
 
                 # Проверяем, нужно ли отправить напоминание
-                if reminder_1h_before <= now < lesson_datetime and reminder_key_1h not in sent_reminders:
+                if reminder_24h_before <= now < reminder_1h_before and reminder_key_24h not in sent_reminders:
+                    await application.bot.send_message(
+                        chat_id=chat_id,
+                        text=f"Напоминание: у вас занятие через 24 часа.\n{day} {time_str} - {description or 'Без описания'}"
+                    )
+                    sent_reminders.add(reminder_key_24h)
+
+                elif reminder_1h_before <= now < lesson_datetime and reminder_key_1h not in sent_reminders:
                     await application.bot.send_message(
                         chat_id=chat_id,
                         text=f"Напоминание: у вас занятие через 1 час.\n{day} {time_str} - {description or 'Без описания'}"
                     )
                     sent_reminders.add(reminder_key_1h)
 
-                elif reminder_24h_before <= now < reminder_1h_before and reminder_key_24h not in sent_reminders:
-                    await application.bot.send_message(
-                        chat_id=chat_id,
-                        text=f"Напоминание: у вас занятие через 24 часа.\n{day} {time_str} - {description or 'Без описания'}"
-                    )
-                    sent_reminders.add(reminder_key_24h)
 
             except Exception as e:
                 print(f"[ERROR] Ошибка обработки занятия для {user_name}: {lesson}. Ошибка: {e}")
@@ -136,7 +137,6 @@ async def send_reminders(application):
         f"[DEBUG] Напоминание для: {user_name}, занятие: {lesson}, ключ 1ч: {reminder_key_1h}, ключ 24ч: {reminder_key_24h}")
     print(f"[DEBUG] now: {now}, reminder_1h_before: {reminder_1h_before}, reminder_24h_before: {reminder_24h_before}")
     print(f"[DEBUG] Уникальные напоминания в sent_reminders: {sent_reminders}")
-
 
 # --- Функции загрузки расписания ---
 def load_default_schedule():
@@ -348,11 +348,11 @@ def schedule_jobs(application: Application):
     """Настраивает планировщик задач."""
     scheduler = AsyncIOScheduler(event_loop=asyncio.get_event_loop())  # Используем текущий event loop
 
-    # Задача: отправлять напоминания каждые 30 минут
+    # Задача: отправлять напоминания
     scheduler.add_job(
         send_reminders,  # Вызываем напрямую (без lambda)
         trigger="interval",
-        minutes=30,
+        minutes=20,
         args=[application],  # Передаём приложение в аргументах
         id="send_reminders"
     )
