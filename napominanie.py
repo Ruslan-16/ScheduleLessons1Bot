@@ -255,24 +255,23 @@ async def view_all(update: Update, context: CallbackContext):
     if update.effective_chat.id != ADMIN_ID:
         await update.message.reply_text("У вас нет прав для выполнения этой команды.")
         return
+
     if not temporary_schedule:
         await update.message.reply_text("Расписание пустое или не загружено.")
         return
 
-    message = "\n\n".join([
-        f"{user}:\n" + "\n".join(
-            [f"{lesson['day']} {lesson['time']} - {lesson['description']}" for lesson in lessons]
-        )
-        for user, lessons in temporary_schedule.items()
-    ])
-    await update.message.reply_text(f"Все расписание:\n\n{message}")
-
-
-    message = "\n\n".join([
-        f"{user}:\n" + "\n".join(lessons)
-        for user, lessons in temporary_schedule.items()
-    ])
-    await update.message.reply_text(f"Все расписание:\n\n{message}")
+    try:
+        # Перебираем всех пользователей и их расписания
+        message = "\n\n".join([
+            f"{user}:\n" + "\n".join(
+                [f"{lesson['day']} {lesson['time']} - {lesson['description']}" for lesson in lessons]
+            )
+            for user, lessons in temporary_schedule.items()
+        ])
+        await update.message.reply_text(f"Все расписание:\n\n{message}")
+    except Exception as e:
+        print(f"[ERROR] Ошибка формирования расписания: {e}")
+        await update.message.reply_text("Произошла ошибка при отображении расписания.")
 
 async def manual_reset(update: Update, context: CallbackContext):
     """Ручной сброс расписания (только для администратора)."""
