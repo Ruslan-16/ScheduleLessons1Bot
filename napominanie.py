@@ -75,10 +75,10 @@ async def send_reminders(application):
 
         for lesson in lessons:
             try:
-                # Получаем день, время и описание занятия
-                day = lesson["day"]
-                lesson_time_str = lesson["time"]
-                description = lesson.get("description", "Занятие")
+                # Извлекаем данные из урока
+                day = lesson['day']
+                time_str = lesson['time']
+                description = lesson.get('description', '')
 
                 # Определяем ближайшую дату занятия
                 current_day = days_translation[now.strftime("%A")]  # Сегодняшний день недели
@@ -89,7 +89,7 @@ async def send_reminders(application):
                 if lesson_day_index == current_day_index:
                     # Занятие сегодня
                     lesson_date = now.date()
-                    if now.time() > datetime.strptime(lesson_time_str, "%H:%M").time():
+                    if now.time() > datetime.strptime(time_str, "%H:%M").time():
                         # Если занятие уже прошло, переносим его на следующую неделю
                         lesson_date += timedelta(days=7)
                 elif lesson_day_index > current_day_index:
@@ -102,42 +102,31 @@ async def send_reminders(application):
                     lesson_date = now.date() + timedelta(days=days_to_lesson)
 
                 # Создаём полное время занятия
-                lesson_time = datetime.strptime(lesson_time_str, "%H:%M").time()
+                lesson_time = datetime.strptime(time_str, "%H:%M").time()
                 lesson_datetime = datetime.combine(lesson_date, lesson_time).astimezone(local_tz)
 
                 # Временные метки для напоминаний
                 reminder_1h_before = lesson_datetime - timedelta(hours=1)
                 reminder_24h_before = lesson_datetime - timedelta(days=1)
 
-                # --- Отладочные выводы ---
-                print(f"[DEBUG] Обработка занятия для пользователя: {user_name}")
-                print(f"[DEBUG] Занятие: {description} в {day} {lesson_time_str}")
-                print(f"[DEBUG] lesson_datetime: {lesson_datetime}")
-                print(f"[DEBUG] reminder_1h_before: {reminder_1h_before}")
-                print(f"[DEBUG] reminder_24h_before: {reminder_24h_before}")
-                print(f"[DEBUG] now: {now}")
-
                 # Создаём уникальный ключ для напоминания
                 reminder_key_1h = (user_name, lesson_datetime, "1 час")
                 reminder_key_24h = (user_name, lesson_datetime, "24 часа")
 
-                # Проверяем, нужно ли отправить напоминание за 1 час
+                # Проверяем, нужно ли отправить напоминание
                 if reminder_1h_before <= now < lesson_datetime and reminder_key_1h not in sent_reminders:
                     await application.bot.send_message(
                         chat_id=chat_id,
-                        text=f"Напоминание: у вас занятие через 1 час.\n{description} в {day} {lesson_time_str}"
+                        text=f"Напоминание: у вас занятие через 1 час.\n{day} {time_str} - {description or 'Без описания'}"
                     )
                     sent_reminders.add(reminder_key_1h)
-                    print(f"[DEBUG] Напоминание за 1 час отправлено: {user_name}, {lesson_datetime}")
 
-                # Проверяем, нужно ли отправить напоминание за 24 часа
                 elif reminder_24h_before <= now < reminder_1h_before and reminder_key_24h not in sent_reminders:
                     await application.bot.send_message(
                         chat_id=chat_id,
-                        text=f"Напоминание: у вас занятие через 24 часа.\n{description} в {day} {lesson_time_str}"
+                        text=f"Напоминание: у вас занятие через 24 часа.\n{day} {time_str} - {description or 'Без описания'}"
                     )
                     sent_reminders.add(reminder_key_24h)
-                    print(f"[DEBUG] Напоминание за 24 часа отправлено: {user_name}, {lesson_datetime}")
 
             except Exception as e:
                 print(f"[ERROR] Ошибка обработки занятия для {user_name}: {lesson}. Ошибка: {e}")
@@ -152,13 +141,20 @@ def load_default_schedule():
         response = requests.get(github_raw_url)
         response.raise_for_status()
         schedule = response.json()
+
+        # Проверяем, соответствует ли формат
+        for user, lessons in schedule.items():
+            for lesson in lessons:
+                if not all(key in lesson for key in ['day', 'time']):
+                    raise ValueError(f"Ошибка в формате расписания: {lesson}")
+
         print(f"Расписание успешно загружено: {schedule}")  # Отладочный вывод
         return schedule
     except requests.RequestException as e:
         print(f"Ошибка загрузки расписания с GitHub: {e}")
         return {}
-    except json.JSONDecodeError:
-        print("Ошибка: Файл расписания не является валидным JSON.")
+    except (json.JSONDecodeError, ValueError) as e:
+        print(f"Ошибка: Файл расписания содержит некорректные данные. {e}")
         return {}
 
 def reset_schedule():
@@ -225,11 +221,16 @@ async def update_user_data():
 
 async def view_schedule(update: Update, context: CallbackContext):
     """Показывает расписание для конкретного ученика."""
-    user_name = update.effective_chat.username  # Используем username вместо first_name
+    user_name = update.effective_chat.username  # Используем username
     user_schedule = temporary_schedule.get(user_name)
 
     if user_schedule:
-        message = "\n".join(user_schedule)
+        # Генерируем текст расписания из нового формата
+        message = "\n".join([
+            f"{lesson['day']} {lesson['time']} - {lesson['description']}"
+            if lesson.get('description') else f"{lesson['day']} {lesson['time']}"
+            for lesson in user_schedule
+        ])
         await update.message.reply_text(f"Ваше расписание:\n{message}")
     else:
         await update.message.reply_text("У вас нет расписания. Пожалуйста, свяжитесь с администратором.")
@@ -259,6 +260,15 @@ async def view_all(update: Update, context: CallbackContext):
         return
 
     message = "\n\n".join([
+        f"{user}:\n" + "\n".join(
+            [f"{lesson['day']} {lesson['time']} - {lesson['description']}" for lesson in lessons]
+        )
+        for user, lessons in temporary_schedule.items()
+    ])
+    await update.message.reply_text(f"Все расписание:\n\n{message}")
+
+
+    message = "\n\n".join([
         f"{user}:\n" + "\n".join(lessons)
         for user, lessons in temporary_schedule.items()
     ])
@@ -280,19 +290,21 @@ async def add_schedule(update: Update, context: CallbackContext):
 
     try:
         user_id = context.args[0]  # Имя ученика
-        lesson = " ".join(context.args[1:])  # Остальные аргументы - это расписание
-        if not lesson:
-            await update.message.reply_text("Ошибка: укажите расписание!")
-            return
+        day = context.args[1]  # День недели
+        time = context.args[2]  # Время
+        description = " ".join(context.args[3:])  # Описание (если есть)
+
+        new_lesson = {"day": day, "time": time, "description": description}
 
         if user_id in temporary_schedule:
-            temporary_schedule[user_id].append(lesson)
+            temporary_schedule[user_id].append(new_lesson)
         else:
-            temporary_schedule[user_id] = [lesson]
+            temporary_schedule[user_id] = [new_lesson]
 
-        await update.message.reply_text(f"Расписание для {user_id} обновлено:\n{lesson}")
+        await update.message.reply_text(f"Расписание для {user_id} обновлено:\n{day} {time} - {description}")
     except (IndexError, ValueError):
-        await update.message.reply_text("Использование команды:\n/add_schedule user_id день время - занятие")
+        await update.message.reply_text("Использование команды:\n/add_schedule user_id день время описание")
+
 # --- Кнопки меню ---
 def get_main_menu(is_admin=False):
     """Создаёт меню клавиатуры."""
