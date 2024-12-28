@@ -120,7 +120,7 @@ async def send_reminders(application):
                 reminder_key_1h = (user_name, lesson_datetime, "1 час")
                 reminder_key_24h = (user_name, lesson_datetime, "24 часа")
 
-                # Проверяем, нужно ли отправить напоминание
+                # Проверяем, нужно ли отправить напоминание за 1 час
                 if reminder_1h_before <= now < lesson_datetime and reminder_key_1h not in sent_reminders:
                     await application.bot.send_message(
                         chat_id=chat_id,
@@ -129,6 +129,7 @@ async def send_reminders(application):
                     sent_reminders.add(reminder_key_1h)
                     print(f"[DEBUG] Напоминание за 1 час отправлено: {user_name}, {lesson_datetime}")
 
+                # Проверяем, нужно ли отправить напоминание за 24 часа
                 elif reminder_24h_before <= now < reminder_1h_before and reminder_key_24h not in sent_reminders:
                     await application.bot.send_message(
                         chat_id=chat_id,
@@ -141,7 +142,6 @@ async def send_reminders(application):
                 print(f"[ERROR] Ошибка обработки занятия для {user_name}: {lesson}. Ошибка: {e}")
 
     print(f"[DEBUG] Напоминания отправлены: {sent_reminders}")
-
 
 # --- Функции загрузки расписания ---
 def load_default_schedule():
