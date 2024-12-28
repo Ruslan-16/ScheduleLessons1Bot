@@ -75,9 +75,10 @@ async def send_reminders(application):
 
         for lesson in lessons:
             try:
-                # Разбираем строку занятия
-                day, time_details = lesson.split(" ", 1)
-                lesson_time_str = time_details.split(" - ")[0]  # Например, "8:15"
+                # Получаем день, время и описание занятия
+                day = lesson["day"]
+                lesson_time_str = lesson["time"]
+                description = lesson.get("description", "Занятие")
 
                 # Определяем ближайшую дату занятия
                 current_day = days_translation[now.strftime("%A")]  # Сегодняшний день недели
@@ -110,7 +111,7 @@ async def send_reminders(application):
 
                 # --- Отладочные выводы ---
                 print(f"[DEBUG] Обработка занятия для пользователя: {user_name}")
-                print(f"[DEBUG] Занятие: {lesson}")
+                print(f"[DEBUG] Занятие: {description} в {day} {lesson_time_str}")
                 print(f"[DEBUG] lesson_datetime: {lesson_datetime}")
                 print(f"[DEBUG] reminder_1h_before: {reminder_1h_before}")
                 print(f"[DEBUG] reminder_24h_before: {reminder_24h_before}")
@@ -124,7 +125,7 @@ async def send_reminders(application):
                 if reminder_1h_before <= now < lesson_datetime and reminder_key_1h not in sent_reminders:
                     await application.bot.send_message(
                         chat_id=chat_id,
-                        text=f"Напоминание: у вас занятие через 1 час.\n{lesson}"
+                        text=f"Напоминание: у вас занятие через 1 час.\n{description} в {day} {lesson_time_str}"
                     )
                     sent_reminders.add(reminder_key_1h)
                     print(f"[DEBUG] Напоминание за 1 час отправлено: {user_name}, {lesson_datetime}")
@@ -133,7 +134,7 @@ async def send_reminders(application):
                 elif reminder_24h_before <= now < reminder_1h_before and reminder_key_24h not in sent_reminders:
                     await application.bot.send_message(
                         chat_id=chat_id,
-                        text=f"Напоминание: у вас занятие через 24 часа.\n{lesson}"
+                        text=f"Напоминание: у вас занятие через 24 часа.\n{description} в {day} {lesson_time_str}"
                     )
                     sent_reminders.add(reminder_key_24h)
                     print(f"[DEBUG] Напоминание за 24 часа отправлено: {user_name}, {lesson_datetime}")
