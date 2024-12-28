@@ -110,8 +110,8 @@ async def send_reminders(application):
                 reminder_24h_before = lesson_datetime - timedelta(days=1)
 
                 # Создаём уникальный ключ для напоминания
-                reminder_key_1h = (user_name, lesson_datetime, "1 час")
-                reminder_key_24h = (user_name, lesson_datetime, "24 часа")
+                reminder_key_1h = (user_name, lesson_datetime.isoformat(), "1 час")
+                reminder_key_24h = (user_name, lesson_datetime.isoformat(), "24 часа")
 
                 # Проверяем, нужно ли отправить напоминание
                 if reminder_1h_before <= now < lesson_datetime and reminder_key_1h not in sent_reminders:
@@ -132,6 +132,11 @@ async def send_reminders(application):
                 print(f"[ERROR] Ошибка обработки занятия для {user_name}: {lesson}. Ошибка: {e}")
 
     print(f"[DEBUG] Напоминания отправлены: {sent_reminders}")
+    print(
+        f"[DEBUG] Напоминание для: {user_name}, занятие: {lesson}, ключ 1ч: {reminder_key_1h}, ключ 24ч: {reminder_key_24h}")
+    print(f"[DEBUG] now: {now}, reminder_1h_before: {reminder_1h_before}, reminder_24h_before: {reminder_24h_before}")
+    print(f"[DEBUG] Уникальные напоминания в sent_reminders: {sent_reminders}")
+
 
 # --- Функции загрузки расписания ---
 def load_default_schedule():

@@ -29,10 +29,10 @@
         {"day": "Четверг", "time": "10:35", "description": "Speaking"},
         {"day": "Четверг", "time": "09:15", "description": "Speaking"},
         {"day": "Суббота", "time": "09:00", "description": ""},
-        {"day": "Суббота", "time": "12:00", "description": ""},
-        {"day": "Суббота", "time": "11:40", "description": ""},
-        {"day": "Воскресенье", "time": "11:00", "description": ""},
-        {"day": "Воскресенье", "time": "12:00", "description": ""}
+        {"day": "Суббота", "time": "15:40", "description": ""},
+        {"day": "Суббота", "time": "14:40", "description": ""},
+        {"day": "Воскресенье", "time": "15:30", "description": ""},
+        {"day": "Воскресенье", "time": "14:30", "description": ""}
     ],
     "Азамат (FF2)": [
         {"day": "Вторник", "time": "16:00", "description": ""},
