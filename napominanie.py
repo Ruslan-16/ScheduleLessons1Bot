@@ -114,25 +114,21 @@ async def send_reminders(application):
                 reminder_key_1h = (user_name, lesson_datetime.isoformat(), "1 час")
                 reminder_key_24h = (user_name, lesson_datetime.isoformat(), "24 часа")
 
-                # Проверяем, нужно ли отправить напоминание за 1 час
                 if reminder_1h_before <= now <= reminder_5m_window_end and reminder_key_1h not in sent_reminders:
+                    print("[DEBUG] Условие за 1 час сработало")
                     await application.bot.send_message(
                         chat_id=chat_id,
                         text=f"Напоминание: у вас занятие через 1 час.\n{day} {time_str} - {description or 'Без описания'}"
                     )
                     sent_reminders.add(reminder_key_1h)
-                    print(f"[DEBUG] Напоминание за 1 час отправлено: {reminder_key_1h}")
 
-                # Проверяем, нужно ли отправить напоминание за 24 часа
                 elif reminder_24h_before <= now < reminder_1h_before and reminder_key_24h not in sent_reminders:
+                    print("[DEBUG] Условие за 24 часа сработало")
                     await application.bot.send_message(
                         chat_id=chat_id,
                         text=f"Напоминание: у вас занятие через 24 часа.\n{day} {time_str} - {description or 'Без описания'}"
                     )
                     sent_reminders.add(reminder_key_24h)
-                    print(f"[DEBUG] Напоминание за 24 часа отправлено: {reminder_key_24h}")
-
-
             except Exception as e:
                 print(f"[ERROR] Ошибка обработки занятия для {user_name}: {lesson}. Ошибка: {e}")
 
@@ -141,6 +137,8 @@ async def send_reminders(application):
         f"[DEBUG] Напоминание для: {user_name}, занятие: {lesson}, ключ 1ч: {reminder_key_1h}, ключ 24ч: {reminder_key_24h}")
     print(f"[DEBUG] now: {now}, reminder_1h_before: {reminder_1h_before}, reminder_24h_before: {reminder_24h_before}")
     print(f"[DEBUG] Уникальные напоминания в sent_reminders: {sent_reminders}")
+    sent_reminders.add(reminder_key_1h)
+    print(f"[DEBUG] Добавлено напоминание за 1 час: {reminder_key_1h}")
 
 # --- Функции загрузки расписания ---
 def load_default_schedule():
@@ -178,9 +176,17 @@ def reset_schedule():
 def clean_sent_reminders():
     """Очищает устаревшие напоминания."""
     global sent_reminders
-    now = datetime.now(local_tz)
+    now = datetime.now(local_tz)  # Текущее время в московской зоне
+
+    # Лог до очистки
+    print(f"[DEBUG] Очистка напоминаний. Текущее время: {now}")
+    print(f"[DEBUG] Напоминания перед очисткой: {sent_reminders}")
+
+    # Удаляем напоминания, у которых время урока прошло
     sent_reminders = {key for key in sent_reminders if datetime.fromisoformat(key[1]) > now}
-    print(f"[DEBUG] Устаревшие напоминания удалены. Текущие: {sent_reminders}")
+
+    # Лог после очистки
+    print(f"[DEBUG] Напоминания после очистки: {sent_reminders}")
 
 # --- Функции обработки команд ---
 async def start(update: Update, context: CallbackContext):
