@@ -2,7 +2,7 @@ import os
 import sys
 import json
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta,timezone
 from apscheduler.executors.asyncio import AsyncIOExecutor
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -37,8 +37,9 @@ days_translation = {
 }
 user_data = {}  # Пустой словарь для хранения username -> chat_id
 # Время сервера
-server_time = datetime.now()
-print(f"Серверное время: {server_time}")
+server_time = datetime.now(timezone.utc)  # Явно указываем UTC
+print(f"Серверное время (UTC): {server_time}")
+
 # Московское время
 moscow_tz = pytz.timezone('Europe/Moscow')
 moscow_time = datetime.now(moscow_tz)
@@ -55,8 +56,53 @@ async def get_my_id(update: Update, context: CallbackContext):
 
 sent_reminders = set()
 
+def calculate_lesson_date(day, time_str, now):
+    """
+    Рассчитывает ближайшую дату и время занятия.
+
+    Args:
+        day (str): День недели занятия (например, "Понедельник").
+        time_str (str): Время занятия в формате "HH:MM".
+        now (datetime): Текущее время.
+
+    Returns:
+        datetime: Дата и время ближайшего занятия.
+    """
+    list_days = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
+
+    # Индексы текущего дня недели и дня занятия
+    current_day_index = now.weekday()  # 0 - Понедельник, 6 - Воскресенье
+    lesson_day_index = list_days.index(day)  # Индекс дня занятия
+
+    # Определяем, через сколько дней будет занятие
+    if lesson_day_index == current_day_index:
+        # Если занятие сегодня, проверяем, прошло ли время занятия
+        lesson_time = datetime.strptime(time_str, "%H:%M").time()
+        if now.time() > lesson_time:
+            days_to_lesson = 7  # Переносим занятие на следующую неделю
+        else:
+            days_to_lesson = 0  # Занятие еще не началось
+    elif lesson_day_index > current_day_index:
+        # Занятие позже на этой неделе
+        days_to_lesson = lesson_day_index - current_day_index
+    else:
+        # Занятие на следующей неделе
+        days_to_lesson = 7 - (current_day_index - lesson_day_index)
+
+    # Рассчитываем дату занятия
+    lesson_date = now.date() + timedelta(days=days_to_lesson)
+
+    # Объединяем дату и время
+    lesson_time = datetime.strptime(time_str, "%H:%M").time()
+    lesson_datetime = datetime.combine(lesson_date, lesson_time)
+
+    return lesson_datetime
+
 async def send_reminders_1h(application):
-    now = datetime.now(local_tz)
+    """Отправляет напоминания за 1 час до занятий."""
+    now = datetime.now(local_tz)  # Текущее московское время
+    global sent_reminders
+
     print(f"[DEBUG] send_reminders_1h запущен в {now}")
 
     for user_name, lessons in temporary_schedule.items():
@@ -72,31 +118,15 @@ async def send_reminders_1h(application):
                 time_str = lesson['time']
                 description = lesson.get('description', '')
 
-                current_day = days_translation[now.strftime("%A")]
-                lesson_day_index = list_days.index(day)
-                current_day_index = list_days.index(current_day)
-
-                # Рассчитываем дату занятия
-                if lesson_day_index == current_day_index:
-                    lesson_date = now.date()
-                    if now.time() > datetime.strptime(time_str, "%H:%M").time():
-                        lesson_date += timedelta(days=7)
-                elif lesson_day_index > current_day_index:
-                    lesson_date = now.date() + timedelta(days=lesson_day_index - current_day_index)
-                else:
-                    lesson_date = now.date() + timedelta(days=7 - (current_day_index - lesson_day_index))
-
-                lesson_time = datetime.strptime(time_str, "%H:%M").time()
-                lesson_datetime = datetime.combine(lesson_date, lesson_time).astimezone(local_tz)
-
+                # Рассчитываем время занятия
+                lesson_date = calculate_lesson_date(day, time_str, now)
+                lesson_datetime = lesson_date.astimezone(local_tz)
                 reminder_1h_before = lesson_datetime - timedelta(hours=1)
                 reminder_5m_window_end = reminder_1h_before + timedelta(minutes=5)
 
                 reminder_key_1h = (user_name, lesson_datetime.isoformat(), "1 час")
 
-                # Логируем значения
-                print(f"[DEBUG] now: {now}, reminder_1h_before: {reminder_1h_before}, reminder_5m_window_end: {reminder_5m_window_end}")
-
+                # Проверяем условие для отправки напоминания
                 if reminder_1h_before <= now <= reminder_5m_window_end and reminder_key_1h not in sent_reminders:
                     await application.bot.send_message(
                         chat_id=chat_id,
@@ -104,8 +134,9 @@ async def send_reminders_1h(application):
                     )
                     sent_reminders.add(reminder_key_1h)
                     print(f"[DEBUG] Напоминание за 1 час отправлено: {reminder_key_1h}")
+
             except Exception as e:
-                print(f"[ERROR] Ошибка обработки занятия: {e}")
+                print(f"[ERROR] Ошибка обработки занятия: {lesson}. Ошибка: {e}")
 
 async def send_reminders_24h(application):
     """Отправляет напоминания за 24 часа до занятий."""
@@ -414,7 +445,7 @@ def schedule_jobs(application: Application):
     scheduler.add_job(
         send_reminders_24h,
         trigger="interval",
-        minutes=15,  # Или другой интервал
+        minutes=30,  # Или другой интервал
         args=[application],
         id="send_reminders_24h"
     )
