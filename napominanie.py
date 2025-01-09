@@ -59,12 +59,10 @@ sent_reminders = set()
 def calculate_lesson_date(day, time_str, now):
     """
     Рассчитывает ближайшую дату и время занятия.
-
     Args:
         day (str): День недели занятия (например, "Понедельник").
         time_str (str): Время занятия в формате "HH:MM".
         now (datetime): Текущее время.
-
     Returns:
         datetime: Дата и время ближайшего занятия.
     """
