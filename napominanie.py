@@ -19,8 +19,8 @@ load_dotenv()
 logging.basicConfig()
 logging.getLogger('apscheduler').setLevel(logging.DEBUG)
 # --- Переменные окружения ---
-BOT_TOKEN= "7843267156:AAHGuD8B4GAY73ECvkGWnoDIIQMrD6GCsLc"
-ADMIN_ID= 413537120
+BOT_TOKEN= os.getenv("BOT_TOKEN")
+ADMIN_ID= os.getenv("ADMIN_ID")
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/Ruslan-16/ScheduleLessons1Bot/refs/heads/main/users.json"
 # --- Глобальные переменные ---
 temporary_schedule = {}  # Хранение оперативного расписания
