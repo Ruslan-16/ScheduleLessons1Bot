@@ -1,18 +1,14 @@
 import os
-import sys
 import json
 import requests
 from datetime import datetime, timedelta,timezone
-from apscheduler.executors.asyncio import AsyncIOExecutor
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from dotenv import load_dotenv
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackContext, filters
 import pytz
 import logging
-import signal
 import asyncio
 # Загрузка переменных окружения
 load_dotenv()
@@ -39,7 +35,6 @@ user_data = {}  # Пустой словарь для хранения username -
 # Время сервера
 server_time = datetime.now(timezone.utc)  # Явно указываем UTC
 print(f"Серверное время (UTC): {server_time}")
-
 # Московское время
 moscow_tz = pytz.timezone('Europe/Moscow')
 moscow_time = datetime.now(moscow_tz)
