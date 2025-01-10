@@ -120,8 +120,7 @@ async def send_reminders_1h(application):
                 lesson_date = calculate_lesson_date(day, time_str, now)
                 lesson_datetime = lesson_date.astimezone(local_tz)
                 reminder_1h_before = lesson_datetime - timedelta(hours=1)
-                reminder_5m_window_end = reminder_1h_before + timedelta(minutes=5)
-
+                reminder_5m_window_end = reminder_1h_before + timedelta(minutes=15)
                 reminder_key_1h = (user_name, lesson_datetime.isoformat(), "1 час")
 
                 # Проверяем условие для отправки напоминания
@@ -135,10 +134,15 @@ async def send_reminders_1h(application):
 
             except Exception as e:
                 print(f"[ERROR] Ошибка обработки занятия: {lesson}. Ошибка: {e}")
+                print(
+                    f"[DEBUG] lesson_datetime: {lesson_datetime}, reminder_1h_before: {reminder_1h_before}, now: {now}")
+                print(f"[DEBUG] reminder_5m_window_end: {reminder_5m_window_end}")
 
 async def send_reminders_24h(application):
     """Отправляет напоминания за 24 часа до занятий."""
-    now = datetime.now(local_tz)
+    now = datetime.now(local_tz)  # Текущее московское время
+    global sent_reminders
+
     print(f"[DEBUG] send_reminders_24h запущен в {now}")
 
     for user_name, lessons in temporary_schedule.items():
@@ -150,45 +154,36 @@ async def send_reminders_24h(application):
 
         for lesson in lessons:
             try:
-                # Извлекаем данные из урока
                 day = lesson['day']
                 time_str = lesson['time']
                 description = lesson.get('description', '')
 
-                # Определяем ближайшую дату занятия
-                current_day = days_translation[now.strftime("%A")]
-                lesson_day_index = list_days.index(day)
-                current_day_index = list_days.index(current_day)
-
-                if lesson_day_index == current_day_index:
-                    lesson_date = now.date()
-                    if now.time() > datetime.strptime(time_str, "%H:%M").time():
-                        lesson_date += timedelta(days=7)
-                elif lesson_day_index > current_day_index:
-                    lesson_date = now.date() + timedelta(days=lesson_day_index - current_day_index)
-                else:
-                    lesson_date = now.date() + timedelta(days=7 - (current_day_index - lesson_day_index))
-
-                # Определяем полное время занятия
-                lesson_time = datetime.strptime(time_str, "%H:%M").time()
-                lesson_datetime = datetime.combine(lesson_date, lesson_time).astimezone(local_tz)
+                # Рассчитываем время занятия
+                lesson_date = calculate_lesson_date(day, time_str, now)
+                lesson_datetime = lesson_date.astimezone(local_tz)
 
                 # Рассчитываем время для напоминания за 24 часа
                 reminder_24h_before = lesson_datetime - timedelta(days=1)
+
+                # Создаём уникальный ключ для напоминания
                 reminder_key_24h = (user_name, lesson_datetime.isoformat(), "24 часа")
 
-                # Логируем значения
-                print(f"[DEBUG] now: {now}, reminder_24h_before: {reminder_24h_before}")
+                # Проверяем условие для отправки напоминания
+                # now должно быть в пределах 5 минут от reminder_24h_before
+                reminder_window_start = reminder_24h_before
+                reminder_window_end = reminder_24h_before + timedelta(minutes=5)
 
-                if reminder_24h_before <= now < lesson_datetime and reminder_key_24h not in sent_reminders:
+                if reminder_window_start <= now <= reminder_window_end and reminder_key_24h not in sent_reminders:
+                    # Отправляем сообщение
                     await application.bot.send_message(
                         chat_id=chat_id,
                         text=f"Напоминание: у вас занятие через 24 часа.\n{day} {time_str} - {description or 'Без описания'}"
                     )
                     sent_reminders.add(reminder_key_24h)
                     print(f"[DEBUG] Напоминание за 24 часа отправлено: {reminder_key_24h}")
+
             except Exception as e:
-                print(f"[ERROR] Ошибка обработки занятия: {e}")
+                print(f"[ERROR] Ошибка обработки занятия: {lesson}. Ошибка: {e}")
 
     print(f"[DEBUG] Напоминания за 24 часа отправлены: {sent_reminders}")
 
@@ -266,9 +261,10 @@ def reset_schedule():
 def clean_sent_reminders():
     """Очищает устаревшие напоминания."""
     global sent_reminders
-    now = datetime.now(local_tz)  # Текущее время
+    now = datetime.now(local_tz)
     sent_reminders = {key for key in sent_reminders if datetime.fromisoformat(key[1]) > now}
     print(f"[DEBUG] Устаревшие напоминания удалены. Текущие: {sent_reminders}")
+
 # --- Функции обработки команд ---
 async def start(update: Update, context: CallbackContext):
     """Обработка команды /start."""
@@ -451,11 +447,10 @@ def schedule_jobs(application: Application):
     scheduler.add_job(
         send_reminders_1h,
         trigger="interval",
-        minutes=15,  # Или другой интервал
+        minutes=5,  # Интервал
         args=[application],
         id="send_reminders_1h"
     )
-
     # Задача: сбрасывать расписание каждую субботу в 23:00
     scheduler.add_job(
         reset_schedule,
