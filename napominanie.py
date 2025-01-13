@@ -276,14 +276,21 @@ def clean_sent_reminders():
     now = datetime.now(pytz.timezone('Europe/Moscow'))
 
     # Очистка напоминаний за 24 часа
-    sent_reminders_24h = {key for key in sent_reminders_24h if datetime.fromisoformat(key[1]) > now}
+    sent_reminders_24h = {
+        key for key in sent_reminders_24h
+        if datetime.fromisoformat(key[1]).astimezone(pytz.timezone('Europe/Moscow')) > now
+    }
 
     # Очистка напоминаний за 1 час
-    sent_reminders_1h = {key for key in sent_reminders_1h if datetime.fromisoformat(key[1]) > now}
+    sent_reminders_1h = {
+        key for key in sent_reminders_1h
+        if datetime.fromisoformat(key[1]).astimezone(pytz.timezone('Europe/Moscow')) > now
+    }
 
+    # Отладочный вывод
     print(f"[DEBUG] Устаревшие напоминания очищены.")
-    print(f"[DEBUG] sent_reminders_24h: {sent_reminders_24h}")
-    print(f"[DEBUG] sent_reminders_1h: {sent_reminders_1h}")
+    print(f"[DEBUG] Напоминания за 24 часа после очистки: {len(sent_reminders_24h)}")
+    print(f"[DEBUG] Напоминания за 1 час после очистки: {len(sent_reminders_1h)}")
 
 # --- Функции обработки команд ---
 async def start(update: Update, context: CallbackContext):
@@ -452,6 +459,11 @@ async def button_handler(update: Update, context: CallbackContext):
         await update.message.reply_text("Неизвестная команда. Пожалуйста, используйте кнопки.")
 # --- Планировщик задач ---
 def schedule_jobs(application: Application):
+    try:
+        loop = asyncio.get_event_loop()
+        print(f"[DEBUG] Текущий event_loop: {loop}")
+    except RuntimeError as e:
+        print(f"[ERROR] Ошибка с event_loop: {e}")
     """Настраивает планировщик задач."""
     scheduler = AsyncIOScheduler(event_loop=asyncio.get_event_loop())  # Используем текущий event loop
 
