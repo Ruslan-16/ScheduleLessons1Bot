@@ -239,34 +239,53 @@ async def send_reminders(application):
     # Финальный отладочный вывод
     print(f"[DEBUG] Уникальные напоминания в sent_reminders: {sent_reminders}")
 # --- Функции загрузки расписания ---
+last_valid_schedule = {}
+
 def load_default_schedule():
     """Загружает расписание с GitHub."""
+    global last_valid_schedule
     try:
+        # Формируем корректный URL
         github_raw_url = GITHUB_RAW_URL.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
-        response = requests.get(github_raw_url)
-        response.raise_for_status()
+        response = requests.get(github_raw_url, timeout=10)
+        response.raise_for_status()  # Проверяем на ошибки HTTP
         schedule = response.json()
 
-        # Проверяем, соответствует ли формат
+        # Проверяем формат данных
+        if not schedule:
+            raise ValueError("Загружено пустое расписание!")
         for user, lessons in schedule.items():
             for lesson in lessons:
                 if not all(key in lesson for key in ['day', 'time']):
                     raise ValueError(f"Ошибка в формате расписания: {lesson}")
 
-        print(f"Расписание успешно загружено: {schedule}")  # Отладочный вывод
+        # Сохраняем последнее успешное расписание
+        last_valid_schedule = schedule
+        print(f"Расписание успешно загружено. Пользователей: {len(schedule)}, Уроков: {sum(len(lessons) for lessons in schedule.values())}")
         return schedule
+
     except requests.RequestException as e:
         print(f"Ошибка загрузки расписания с GitHub: {e}")
-        return {}
     except (json.JSONDecodeError, ValueError) as e:
         print(f"Ошибка: Файл расписания содержит некорректные данные. {e}")
-        return {}
+
+    # Если произошла ошибка, возвращаем последнее валидное расписание
+    print(f"Возвращаем последнее валидное расписание.")
+    return last_valid_schedule
 
 def reset_schedule():
     """Сбрасывает расписание к стандартному."""
     global temporary_schedule
-    temporary_schedule = load_default_schedule()
-    print("Текущее расписание после сброса:", temporary_schedule)  # Отладочный вывод
+    try:
+        new_schedule = load_default_schedule()
+        if not new_schedule:  # Если расписание пустое
+            raise ValueError("Загружено пустое расписание!")
+
+        temporary_schedule = new_schedule
+        print("Текущее расписание после сброса:", temporary_schedule)
+
+    except Exception as e:
+        print(f"[ERROR] Ошибка при сбросе расписания: {e}")
 
     # Очищаем старые напоминания
     clean_sent_reminders()
@@ -336,7 +355,29 @@ async def start(update: Update, context: CallbackContext):
 async def update_user_data():
     """Обновляет список зарегистрированных пользователей."""
     global user_data
-    # Здесь вы можете реализовать дополнительную логику проверки пользователей, если потребуется.
+    global temporary_schedule
+
+    print("[DEBUG] Обновление user_data началось...")
+
+    # 1. Добавляем новых пользователей из расписания
+    for user_name in temporary_schedule.keys():
+        if user_name not in user_data:
+            user_data[user_name] = None  # Пока не зарегистрировались через /start
+            print(f"[DEBUG] Добавлен новый пользователь из расписания: {user_name}")
+
+    # 2. Удаляем пользователей, которых нет в расписании
+    for user_name in list(user_data.keys()):
+        if user_name not in temporary_schedule:
+            print(f"[DEBUG] Пользователь {user_name} удалён из user_data (нет в расписании).")
+            del user_data[user_name]
+
+    # 3. Удаляем пользователей, которые не зарегистрировались (chat_id = None)
+    for user_name, chat_id in list(user_data.items()):
+        if chat_id is None:
+            print(f"[DEBUG] Пользователь {user_name} не зарегистрирован через /start. Удаляем.")
+            del user_data[user_name]
+
+    # Отладочный вывод итогового состояния user_data
     print("[DEBUG] user_data обновлено:", user_data)
 
 async def view_schedule(update: Update, context: CallbackContext):
