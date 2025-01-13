@@ -42,7 +42,7 @@ print(f"Московское время: {moscow_time}")
 # Устанавливаем временную зону для Москвы
 local_tz = pytz.timezone('Europe/Moscow')
 # Получаем текущее время в московской временной зоне
-now = datetime.now(local_tz)
+now = datetime.now(pytz.timezone('Europe/Moscow'))  # Устанавливаем МСК
 print(f"Текущее московское время: {now}")
 
 async def get_my_id(update: Update, context: CallbackContext):
@@ -93,7 +93,7 @@ def calculate_lesson_date(day, time_str, now):
 
 async def send_reminders_1h(application):
     """Отправляет напоминания за 1 час до занятий."""
-    now = datetime.now(local_tz)  # Текущее московское время
+    now = datetime.now(pytz.timezone('Europe/Moscow'))  # Текущее московское время
     global sent_reminders
 
     print(f"[DEBUG] send_reminders_1h запущен в {now}")
@@ -135,7 +135,7 @@ async def send_reminders_1h(application):
 
 async def send_reminders_24h(application):
     """Отправляет напоминания за 24 часа до занятий."""
-    now = datetime.now(local_tz)  # Текущее московское время
+    now = datetime.now(pytz.timezone('Europe/Moscow'))  # Текущее московское время
     global sent_reminders
 
     print(f"[DEBUG] send_reminders_24h запущен в {now}")
@@ -182,30 +182,34 @@ async def send_reminders_24h(application):
 
     print(f"[DEBUG] Напоминания за 24 часа отправлены: {sent_reminders}")
 
-def calculate_lesson_datetime(lesson, now):
-    """Вычисляет ближайшую дату и время урока."""
-    day = lesson['day']
-    time_str = lesson['time']
+def calculate_lesson_date(day, time_str, now):
 
-    current_day = days_translation[now.strftime("%A")]
+    # Индексы текущего дня недели и дня занятия
+    current_day_index = now.weekday()  # 0 - Понедельник, 6 - Воскресенье
     lesson_day_index = list_days.index(day)
-    current_day_index = list_days.index(current_day)
 
-    # Рассчитываем ближайшую дату урока
+    # Определяем, через сколько дней будет занятие
     if lesson_day_index == current_day_index:
-        lesson_date = now.date()
-        if now.time() > datetime.strptime(time_str, "%H:%M").time():
-            lesson_date += timedelta(days=7)
+        lesson_time = datetime.strptime(time_str, "%H:%M").time()
+        if now.time() > lesson_time:
+            days_to_lesson = 7  # Переносим занятие на следующую неделю
+        else:
+            days_to_lesson = 0  # Занятие ещё не началось
     elif lesson_day_index > current_day_index:
         days_to_lesson = lesson_day_index - current_day_index
-        lesson_date = now.date() + timedelta(days=days_to_lesson)
     else:
         days_to_lesson = 7 - (current_day_index - lesson_day_index)
-        lesson_date = now.date() + timedelta(days=days_to_lesson)
 
-    # Создаём полный datetime объекта
+    # Рассчитываем итоговую дату и время занятия
+    lesson_date = now.date() + timedelta(days=days_to_lesson)
     lesson_time = datetime.strptime(time_str, "%H:%M").time()
-    return datetime.combine(lesson_date, lesson_time).astimezone(local_tz)
+    lesson_datetime = datetime.combine(lesson_date, lesson_time)
+
+    # Устанавливаем московскую временную зону
+    lesson_datetime = pytz.timezone('Europe/Moscow').localize(lesson_datetime)
+
+    return lesson_datetime
+
 
 async def send_reminders(application):
     """Главная функция для отправки напоминаний."""
