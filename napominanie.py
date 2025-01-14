@@ -512,30 +512,35 @@ async def button_handler(update: Update, context: CallbackContext):
         await update.message.reply_text("Неизвестная команда. Пожалуйста, используйте кнопки.")
 # --- Планировщик задач ---
 def schedule_jobs(application: Application):
+    """Настраивает планировщик задач."""
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()  # Безопасное получение текущего loop
         print(f"[DEBUG] Текущий event_loop: {loop}")
     except RuntimeError as e:
         print(f"[ERROR] Ошибка с event_loop: {e}")
-    """Настраивает планировщик задач."""
-    scheduler = AsyncIOScheduler(event_loop=asyncio.get_event_loop())  # Используем текущий event loop
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
 
-    # Задача: отправлять напоминания
+    scheduler = AsyncIOScheduler(event_loop=loop)  # Используем текущий loop
+
+    # Задача: отправлять напоминания за 24 часа
     scheduler.add_job(
         send_reminders_24h,
         trigger="interval",
-        minutes=15,  # Или другой интервал
-        args=[application],
+        minutes=15,  # Интервал
+        args=[application],  # Передаём application
         id="send_reminders_24h"
     )
 
+    # Задача: отправлять напоминания за 1 час
     scheduler.add_job(
         send_reminders_1h,
         trigger="interval",
         minutes=5,  # Интервал
-        args=[application],
+        args=[application],  # Передаём application
         id="send_reminders_1h"
     )
+
     # Задача: сбрасывать расписание каждую субботу в 23:00
     scheduler.add_job(
         reset_schedule,
@@ -545,16 +550,20 @@ def schedule_jobs(application: Application):
 
     # Задача: обновлять список зарегистрированных пользователей каждые 5 минут
     scheduler.add_job(
-        update_user_data,  # Вызываем напрямую
+        update_user_data,
         trigger="interval",
         minutes=5,
+        args=[application],  # Передаём application
         id="update_user_data"
     )
+
+    # Задача: очищать устаревшие напоминания каждый день в 00:00
     scheduler.add_job(
         clean_sent_reminders,
-        CronTrigger(hour=0, minute=0),  # Каждый день в 00:00
+        CronTrigger(hour=0, minute=0),
         id="clean_sent_reminders"
     )
+
     scheduler.start()
     print("Планировщик задач запущен.")
 
