@@ -187,7 +187,7 @@ async def send_reminders_24h(application):
                 print(f"[ERROR] Ошибка обработки занятия: {lesson}. Ошибка: {e}")
                 print(f"[DEBUG] lesson_datetime: {lesson_datetime}, now: {now}")
 
-    print(f"[DEBUG] Напоминания за 24 часа отправлены: {sent_reminders}")
+    print(f"[DEBUG] Напоминания за 24 часа отправлены: {sent_reminders_24h}")
 
 def calculate_lesson_date(day, time_str, now):
     # Проверяем, что день недели корректен
