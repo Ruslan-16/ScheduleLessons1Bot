@@ -352,8 +352,8 @@ async def start(update: Update, context: CallbackContext):
         reply_markup=get_main_menu(is_admin=False)
     )
 
-async def update_user_data():
-    """Обновляет список зарегистрированных пользователей."""
+async def update_user_data(application):
+    """Обновляет список зарегистрированных пользователей и уведомляет администратора о незарегистрированных."""
     global user_data
     global temporary_schedule
 
@@ -371,13 +371,25 @@ async def update_user_data():
             print(f"[DEBUG] Пользователь {user_name} удалён из user_data (нет в расписании).")
             del user_data[user_name]
 
-    # 3. Удаляем пользователей, которые не зарегистрировались (chat_id = None)
+    # 3. Обрабатываем незарегистрированных пользователей (chat_id = None)
     for user_name, chat_id in list(user_data.items()):
         if chat_id is None:
             print(f"[DEBUG] Пользователь {user_name} не зарегистрирован через /start. Удаляем.")
+
+            # Уведомление администратору
+            try:
+                await application.bot.send_message(
+                    chat_id=ADMIN_ID,  # Ваш ADMIN_ID
+                    text=f"Пользователь {user_name} есть в расписании, но не зарегистрирован через /start."
+                )
+                print(f"[DEBUG] Администратору отправлено уведомление о пользователе: {user_name}")
+            except Exception as e:
+                print(f"[ERROR] Не удалось отправить сообщение администратору: {e}")
+
+            # Удаляем пользователя
             del user_data[user_name]
 
-    # Отладочный вывод итогового состояния user_data
+    # 4. Отладочный вывод итогового состояния user_data
     print("[DEBUG] user_data обновлено:", user_data)
 
 async def view_schedule(update: Update, context: CallbackContext):
@@ -512,7 +524,7 @@ def schedule_jobs(application: Application):
     scheduler.add_job(
         send_reminders_24h,
         trigger="interval",
-        minutes=30,  # Или другой интервал
+        minutes=15,  # Или другой интервал
         args=[application],
         id="send_reminders_24h"
     )
