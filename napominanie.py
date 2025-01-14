@@ -352,8 +352,8 @@ async def start(update: Update, context: CallbackContext):
         reply_markup=get_main_menu(is_admin=False)
     )
 
-async def update_user_data(application):
-    """Обновляет список зарегистрированных пользователей и уведомляет администратора о незарегистрированных."""
+async def update_user_data():
+    """Обновляет список зарегистрированных пользователей."""
     global user_data
     global temporary_schedule
 
@@ -371,25 +371,13 @@ async def update_user_data(application):
             print(f"[DEBUG] Пользователь {user_name} удалён из user_data (нет в расписании).")
             del user_data[user_name]
 
-    # 3. Обрабатываем незарегистрированных пользователей (chat_id = None)
+    # 3. Удаляем пользователей, которые не зарегистрировались (chat_id = None)
     for user_name, chat_id in list(user_data.items()):
         if chat_id is None:
             print(f"[DEBUG] Пользователь {user_name} не зарегистрирован через /start. Удаляем.")
-
-            # Уведомление администратору
-            try:
-                await application.bot.send_message(
-                    chat_id=ADMIN_ID,  # Ваш ADMIN_ID
-                    text=f"Пользователь {user_name} есть в расписании, но не зарегистрирован через /start."
-                )
-                print(f"[DEBUG] Администратору отправлено уведомление о пользователе: {user_name}")
-            except Exception as e:
-                print(f"[ERROR] Не удалось отправить сообщение администратору: {e}")
-
-            # Удаляем пользователя
             del user_data[user_name]
 
-    # 4. Отладочный вывод итогового состояния user_data
+    # Отладочный вывод итогового состояния user_data
     print("[DEBUG] user_data обновлено:", user_data)
 
 async def view_schedule(update: Update, context: CallbackContext):
@@ -512,35 +500,30 @@ async def button_handler(update: Update, context: CallbackContext):
         await update.message.reply_text("Неизвестная команда. Пожалуйста, используйте кнопки.")
 # --- Планировщик задач ---
 def schedule_jobs(application: Application):
-    """Настраивает планировщик задач."""
     try:
-        loop = asyncio.get_running_loop()  # Безопасное получение текущего loop
+        loop = asyncio.get_event_loop()
         print(f"[DEBUG] Текущий event_loop: {loop}")
     except RuntimeError as e:
         print(f"[ERROR] Ошибка с event_loop: {e}")
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+    """Настраивает планировщик задач."""
+    scheduler = AsyncIOScheduler(event_loop=asyncio.get_event_loop())  # Используем текущий event loop
 
-    scheduler = AsyncIOScheduler(event_loop=loop)  # Используем текущий loop
-
-    # Задача: отправлять напоминания за 24 часа
+    # Задача: отправлять напоминания
     scheduler.add_job(
         send_reminders_24h,
         trigger="interval",
-        minutes=15,  # Интервал
-        args=[application],  # Передаём application
+        minutes=15,  # Или другой интервал
+        args=[application],
         id="send_reminders_24h"
     )
 
-    # Задача: отправлять напоминания за 1 час
     scheduler.add_job(
         send_reminders_1h,
         trigger="interval",
         minutes=5,  # Интервал
-        args=[application],  # Передаём application
+        args=[application],
         id="send_reminders_1h"
     )
-
     # Задача: сбрасывать расписание каждую субботу в 23:00
     scheduler.add_job(
         reset_schedule,
@@ -550,20 +533,16 @@ def schedule_jobs(application: Application):
 
     # Задача: обновлять список зарегистрированных пользователей каждые 5 минут
     scheduler.add_job(
-        update_user_data,
+        update_user_data,  # Вызываем напрямую
         trigger="interval",
         minutes=5,
-        args=[application],  # Передаём application
         id="update_user_data"
     )
-
-    # Задача: очищать устаревшие напоминания каждый день в 00:00
     scheduler.add_job(
         clean_sent_reminders,
-        CronTrigger(hour=0, minute=0),
+        CronTrigger(hour=0, minute=0),  # Каждый день в 00:00
         id="clean_sent_reminders"
     )
-
     scheduler.start()
     print("Планировщик задач запущен.")
 
