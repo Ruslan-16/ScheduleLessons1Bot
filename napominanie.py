@@ -124,7 +124,7 @@ async def send_reminders_1h(application):
                     # Отправляем сообщение
                     await application.bot.send_message(
                         chat_id=chat_id,
-                        text=f"Напоминание: у вас занятие через 1 час.\n{day} {time_str} - {description or 'Без описания'}"
+                        text=f"Напоминание: у вас занятие через 1 час.\n{day} {time_str} по Мск - {description or 'Без описания'}"
                     )
                     sent_reminders_1h.add(reminder_key_1h)
                     print(f"[DEBUG] Напоминание за 1 час отправлено: {reminder_key_1h}")
@@ -178,7 +178,7 @@ async def send_reminders_24h(application):
                     # Отправляем сообщение
                     await application.bot.send_message(
                         chat_id=chat_id,
-                        text=f"Напоминание: у вас занятие через 24 часа.\n{day} {time_str} - {description or 'Без описания'}"
+                        text=f"Напоминание: у вас занятие через 24 часа.\n{day} {time_str} по Мск - {description or 'Без описания'}"
                     )
                     sent_reminders_24h.add(reminder_key_24h)
                     print(f"[DEBUG] Напоминание за 24 часа отправлено: {reminder_key_24h}")
@@ -254,14 +254,21 @@ def load_default_schedule():
         # Проверяем формат данных
         if not schedule:
             raise ValueError("Загружено пустое расписание!")
-        for user, lessons in schedule.items():
-            for lesson in lessons:
+
+        for user, data in schedule.items():
+            # Проверяем наличие полей "name" и "lessons"
+            if "name" not in data or "lessons" not in data:
+                raise ValueError(f"Ошибка в формате расписания для пользователя {user}: {data}")
+
+            # Проверяем каждый урок
+            for lesson in data["lessons"]:
                 if not all(key in lesson for key in ['day', 'time']):
-                    raise ValueError(f"Ошибка в формате расписания: {lesson}")
+                    raise ValueError(f"Ошибка в формате урока: {lesson}")
 
         # Сохраняем последнее успешное расписание
         last_valid_schedule = schedule
-        print(f"Расписание успешно загружено. Пользователей: {len(schedule)}, Уроков: {sum(len(lessons) for lessons in schedule.values())}")
+        print(
+            f"Расписание успешно загружено. Пользователей: {len(schedule)}, Уроков: {sum(len(data['lessons']) for data in schedule.values())}")
         return schedule
 
     except requests.RequestException as e:
@@ -277,12 +284,18 @@ def reset_schedule():
     """Сбрасывает расписание к стандартному."""
     global temporary_schedule
     try:
+        # Загружаем расписание
         new_schedule = load_default_schedule()
         if not new_schedule:  # Если расписание пустое
             raise ValueError("Загружено пустое расписание!")
 
         temporary_schedule = new_schedule
-        print("Текущее расписание после сброса:", temporary_schedule)
+
+        # Выводим расписание с именами для отладки
+        print("Текущее расписание после сброса:")
+        for user, data in temporary_schedule.items():
+            full_name = data.get("name", "Имя не указано")
+            print(f"- {full_name} (@{user}): {len(data['lessons'])} уроков")
 
     except Exception as e:
         print(f"[ERROR] Ошибка при сбросе расписания: {e}")
@@ -310,7 +323,6 @@ def clean_sent_reminders():
     print(f"[DEBUG] Устаревшие напоминания очищены.")
     print(f"[DEBUG] Напоминания за 24 часа после очистки: {len(sent_reminders_24h)}")
     print(f"[DEBUG] Напоминания за 1 час после очистки: {len(sent_reminders_1h)}")
-
 # --- Функции обработки команд ---
 async def start(update: Update, context: CallbackContext):
     """Обработка команды /start."""
@@ -339,7 +351,6 @@ async def start(update: Update, context: CallbackContext):
             "Извините, вас нет в расписании. Свяжитесь с администратором, если это ошибка."
         )
         return
-
     # Регистрируем пользователя
     user_data[user_name] = user_id
     print(f"[DEBUG] User {user_name} добавлен в user_data: {user_name} -> {user_id}")
@@ -348,7 +359,7 @@ async def start(update: Update, context: CallbackContext):
     await update_user_data()
 
     await update.message.reply_text(
-        "Добро пожаловать! Ваше расписание готово. Выберите действие:",
+        "Добро пожаловать! Ваше расписание готово!:",
         reply_markup=get_main_menu(is_admin=False)
     )
 
@@ -360,21 +371,23 @@ async def update_user_data():
     print("[DEBUG] Обновление user_data началось...")
 
     # 1. Добавляем новых пользователей из расписания
-    for user_name in temporary_schedule.keys():
+    for user_name, data in temporary_schedule.items():
+        full_name = data.get("name", "Имя не указано")
         if user_name not in user_data:
             user_data[user_name] = None  # Пока не зарегистрировались через /start
-            print(f"[DEBUG] Добавлен новый пользователь из расписания: {user_name}")
+            print(f"[DEBUG] Добавлен новый пользователь: {full_name} (@{user_name})")
 
     # 2. Удаляем пользователей, которых нет в расписании
     for user_name in list(user_data.keys()):
         if user_name not in temporary_schedule:
-            print(f"[DEBUG] Пользователь {user_name} удалён из user_data (нет в расписании).")
+            print(f"[DEBUG] Пользователь @{user_name} удалён из user_data (нет в расписании).")
             del user_data[user_name]
 
     # 3. Удаляем пользователей, которые не зарегистрировались (chat_id = None)
     for user_name, chat_id in list(user_data.items()):
         if chat_id is None:
-            print(f"[DEBUG] Пользователь {user_name} не зарегистрирован через /start. Удаляем.")
+            full_name = temporary_schedule.get(user_name, {}).get("name", "Имя не указано")
+            print(f"[DEBUG] Пользователь {full_name} (@{user_name}) не зарегистрирован через /start. Удаляем.")
             del user_data[user_name]
 
     # Отладочный вывод итогового состояния user_data
@@ -422,12 +435,13 @@ async def view_all(update: Update, context: CallbackContext):
         return
 
     try:
-        # Перебираем всех пользователей и их расписания
+        # Формируем сообщение с расписанием
         message = "\n\n".join([
-            f"{user}:\n" + "\n".join(
-                [f"{lesson['day']} {lesson['time']} - {lesson['description']}" for lesson in lessons]
-            )
-            for user, lessons in temporary_schedule.items()
+            f"{data.get('name', 'Имя не указано')} (@{user}):\n" +
+            "\n".join([
+                f"{lesson['day']} {lesson['time']} по Мск - {lesson['description']}" for lesson in data["lessons"]
+            ])
+            for user, data in temporary_schedule.items()
         ])
         await update.message.reply_text(f"Все расписание:\n\n{message}")
     except Exception as e:
@@ -476,7 +490,7 @@ def get_main_menu(is_admin=False):
         ]
     else:
         # Кнопки для ученика
-        buttons = [[KeyboardButton("Моё расписание")]]
+        buttons = [[KeyboardButton("Моё расписание")],[KeyboardButton("Старт")]]
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 # --- Обработчик кнопок ---
 async def button_handler(update: Update, context: CallbackContext):
@@ -486,6 +500,8 @@ async def button_handler(update: Update, context: CallbackContext):
 
     if text == "Моё расписание":
         await view_schedule(update, context)
+    elif text == "Старт":
+        await start(update, context)
     elif text == "Просмотреть всё расписание" and user_id == ADMIN_ID:
         await view_all(update, context)
     elif text == "Сбросить расписание" and user_id == ADMIN_ID:
@@ -527,7 +543,7 @@ def schedule_jobs(application: Application):
     # Задача: сбрасывать расписание каждую субботу в 23:00
     scheduler.add_job(
         reset_schedule,
-        CronTrigger(day_of_week="sat", hour=23, minute=0),
+        CronTrigger(day_of_week="sun", hour=23, minute=0),
         id="reset_schedule"
     )
 
