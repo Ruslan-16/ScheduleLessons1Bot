@@ -1,7 +1,5 @@
 {
-    "ReginaSchool": {
-        "name": "Регина Администратор",
-        "lessons": [
+    "ReginaSchool":[
         {"day": "Понедельник", "time": "08:15", "description": "Грамматика, лексика"},
         {"day": "Понедельник", "time": "09:15", "description": "Грамматика, лексика"},
         {"day": "Понедельник", "time": "12:15", "description": "Грамматика, лексика"},
@@ -20,10 +18,8 @@
         {"day": "Пятница", "time": "10:15", "description": "Страноведение"},
         {"day": "Воскресенье", "time": "15:00", "description": ""},
         {"day": "Воскресенье", "time": "19:00", "description": ""}
-    ]},
-    "RuslanAlmasovich":{
-        "name": "Руслан Разработчик",
-        "lessons": [
+    ],
+    "RuslanAlmasovich":[
     {"day": "Понедельник", "time": "08:00", "description": ""},
     {"day": "Понедельник", "time": "09:00", "description": ""},
     {"day": "Понедельник", "time": "10:00", "description": ""},
@@ -114,53 +110,35 @@
     {"day": "Воскресенье", "time": "17:00", "description": ""},
     {"day": "Воскресенье", "time": "18:00", "description": ""},
     {"day": "Воскресенье", "time": "19:00", "description": ""}
-]},
-   "Артем (FF2)": {
-    "name": "Имя Пользователя",
-    "lessons": [
+],
+   "Артем (FF2)":[
         {"day": "Понедельник", "time": "20:00", "description": ""},
         {"day": "Вторник", "time": "20:00", "description": ""},
         {"day": "Пятница", "time": "20:00", "description": ""}
     ]
-},
-    "relxia": {
-        "name": "Карина",
-        "lessons":[
+,
+    "relxia": [
         {"day": "Понедельник", "time": "17:00", "description": ""},
         {"day": "Вторник", "time": "17:00", "description": ""}
-    ]},
-    "Давид":{
-        "name": "------",
-        "lessons": [
+    ],
+    "Давид"[
         {"day": "Понедельник", "time": "18:30", "description": ""},
         {"day": "Четверг", "time": "18:00", "description": ""}
-    ]},
-    "Алиса и Настя": {
-        "name": "-----",
-        "lessons":[
+    ],
+    "Алиса и Настя":[
         {"day": "Понедельник", "time": "19:00", "description": ""},
         {"day": "Четверг", "time": "19:45", "description": ""}
-    ]},
-    "Ксюша":{
-        "name": "--------",
-        "lessons": [
+    ],
+    "Ксюша":[
         {"day": "Вторник", "time": "19:00", "description": ""},
         {"day": "Четверг", "time": "19:00", "description": ""}
-    ]},
-    "FF0":{
-        "name": "---------",
-        "lessons": [
+    ],
+    "FF0":[
         {"day": "Вторник", "time": "20:00", "description": "40 мин"},
         {"day": "Четверг", "time": "19:00", "description": "40 мин"}
-    ]},
-    "Артем (FF2)": [
-        {"day": "Понедельник", "time": "20:00", "description": ""},
-        {"day": "Вторник", "time": "20:00", "description": ""},
-        {"day": "Пятница", "time": "20:00", "description": ""}
     ],
-    "Карим": {
-        "name": "-----",
-        "lessons":[
+    
+    "Карим": [
         {"day": "Среда", "time": "20:00", "description": ""}
-    ]}
+    ]
 }
