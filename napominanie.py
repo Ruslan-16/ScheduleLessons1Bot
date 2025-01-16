@@ -242,7 +242,7 @@ async def send_reminders(application):
 last_valid_schedule = {}
 
 def load_default_schedule():
-    """Загружает расписание с GitHub, поддерживает оба формата данных."""
+    """Загружает расписание с GitHub."""
     global last_valid_schedule
     try:
         # Формируем корректный URL
@@ -254,37 +254,15 @@ def load_default_schedule():
         # Проверяем формат данных
         if not schedule:
             raise ValueError("Загружено пустое расписание!")
-
-        normalized_schedule = {}
-
-        for user, data in schedule.items():
-            if isinstance(data, list):  # Если расписание в виде списка
-                lessons = data
-                name = "Имя не указано"  # Подставляем дефолтное имя
-            elif isinstance(data, dict) and "name" in data and "lessons" in data:
-                lessons = data["lessons"]
-                name = data["name"]
-            else:
-                raise ValueError(f"Ошибка в формате расписания для пользователя {user}: {data}")
-
-            # Проверяем формат уроков
+        for user, lessons in schedule.items():
             for lesson in lessons:
                 if not all(key in lesson for key in ['day', 'time']):
-                    raise ValueError(f"Ошибка в формате урока: {lesson}")
-
-            # Добавляем пользователя в нормализованное расписание
-            normalized_schedule[user] = {
-                "name": name,
-                "lessons": lessons
-            }
+                    raise ValueError(f"Ошибка в формате расписания: {lesson}")
 
         # Сохраняем последнее успешное расписание
-        last_valid_schedule = normalized_schedule
-        print(
-            f"Расписание успешно загружено. Пользователей: {len(normalized_schedule)}, "
-            f"Уроков: {sum(len(data['lessons']) for data in normalized_schedule.values())}"
-        )
-        return normalized_schedule
+        last_valid_schedule = schedule
+        print(f"Расписание успешно загружено. Пользователей: {len(schedule)}, Уроков: {sum(len(lessons) for lessons in schedule.values())}")
+        return schedule
 
     except requests.RequestException as e:
         print(f"Ошибка загрузки расписания с GitHub: {e}")
@@ -295,23 +273,16 @@ def load_default_schedule():
     print(f"Возвращаем последнее валидное расписание.")
     return last_valid_schedule
 
-
 def reset_schedule():
     """Сбрасывает расписание к стандартному."""
     global temporary_schedule
     try:
-        # Загружаем расписание
         new_schedule = load_default_schedule()
         if not new_schedule:  # Если расписание пустое
             raise ValueError("Загружено пустое расписание!")
 
         temporary_schedule = new_schedule
-
-        # Выводим расписание с именами для отладки
-        print("Текущее расписание после сброса:")
-        for user, data in temporary_schedule.items():
-            full_name = data.get("name", "Имя не указано")
-            print(f"- {full_name} (@{user}): {len(data['lessons'])} уроков")
+        print("Текущее расписание после сброса:", temporary_schedule)
 
     except Exception as e:
         print(f"[ERROR] Ошибка при сбросе расписания: {e}")
@@ -387,23 +358,21 @@ async def update_user_data():
     print("[DEBUG] Обновление user_data началось...")
 
     # 1. Добавляем новых пользователей из расписания
-    for user_name, data in temporary_schedule.items():
-        full_name = data.get("name", "Имя не указано")
+    for user_name in temporary_schedule.keys():
         if user_name not in user_data:
             user_data[user_name] = None  # Пока не зарегистрировались через /start
-            print(f"[DEBUG] Добавлен новый пользователь: {full_name} (@{user_name})")
+            print(f"[DEBUG] Добавлен новый пользователь из расписания: {user_name}")
 
     # 2. Удаляем пользователей, которых нет в расписании
     for user_name in list(user_data.keys()):
         if user_name not in temporary_schedule:
-            print(f"[DEBUG] Пользователь @{user_name} удалён из user_data (нет в расписании).")
+            print(f"[DEBUG] Пользователь {user_name} удалён из user_data (нет в расписании).")
             del user_data[user_name]
 
     # 3. Удаляем пользователей, которые не зарегистрировались (chat_id = None)
     for user_name, chat_id in list(user_data.items()):
         if chat_id is None:
-            full_name = temporary_schedule.get(user_name, {}).get("name", "Имя не указано")
-            print(f"[DEBUG] Пользователь {full_name} (@{user_name}) не зарегистрирован через /start. Удаляем.")
+            print(f"[DEBUG] Пользователь {user_name} не зарегистрирован через /start. Удаляем.")
             del user_data[user_name]
 
     # Отладочный вывод итогового состояния user_data
@@ -451,13 +420,12 @@ async def view_all(update: Update, context: CallbackContext):
         return
 
     try:
-        # Формируем сообщение с расписанием
+        # Перебираем всех пользователей и их расписания
         message = "\n\n".join([
-            f"{data.get('name', 'Имя не указано')} (@{user}):\n" +
-            "\n".join([
-                f"{lesson['day']} {lesson['time']} по Мск - {lesson['description']}" for lesson in data["lessons"]
-            ])
-            for user, data in temporary_schedule.items()
+            f"{user}:\n" + "\n".join(
+                [f"{lesson['day']} {lesson['time']} - {lesson['description']}" for lesson in lessons]
+            )
+            for user, lessons in temporary_schedule.items()
         ])
         await update.message.reply_text(f"Все расписание:\n\n{message}")
     except Exception as e:
