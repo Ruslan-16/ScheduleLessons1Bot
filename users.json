@@ -115,12 +115,14 @@
     {"day": "Воскресенье", "time": "18:00", "description": ""},
     {"day": "Воскресенье", "time": "19:00", "description": ""}
 ]},
-   "Азамат (FF2)":{
-        "name": "----",
-        "lessons": [
-        {"day": "Вторник", "time": "16:00", "description": ""},
-        {"day": "Четверг", "time": "16:00", "description": ""}
-    ]},
+   "Артем (FF2)": {
+    "name": "Имя Пользователя",
+    "lessons": [
+        {"day": "Понедельник", "time": "20:00", "description": ""},
+        {"day": "Вторник", "time": "20:00", "description": ""},
+        {"day": "Пятница", "time": "20:00", "description": ""}
+    ]
+},
     "relxia": {
         "name": "Карина",
         "lessons":[
