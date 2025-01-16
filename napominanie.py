@@ -242,7 +242,7 @@ async def send_reminders(application):
 last_valid_schedule = {}
 
 def load_default_schedule():
-    """Загружает расписание с GitHub."""
+    """Загружает расписание с GitHub, поддерживает оба формата данных."""
     global last_valid_schedule
     try:
         # Формируем корректный URL
@@ -255,21 +255,36 @@ def load_default_schedule():
         if not schedule:
             raise ValueError("Загружено пустое расписание!")
 
+        normalized_schedule = {}
+
         for user, data in schedule.items():
-            # Проверяем наличие полей "name" и "lessons"
-            if "name" not in data or "lessons" not in data:
+            if isinstance(data, list):  # Если расписание в виде списка
+                lessons = data
+                name = "Имя не указано"  # Подставляем дефолтное имя
+            elif isinstance(data, dict) and "name" in data and "lessons" in data:
+                lessons = data["lessons"]
+                name = data["name"]
+            else:
                 raise ValueError(f"Ошибка в формате расписания для пользователя {user}: {data}")
 
-            # Проверяем каждый урок
-            for lesson in data["lessons"]:
+            # Проверяем формат уроков
+            for lesson in lessons:
                 if not all(key in lesson for key in ['day', 'time']):
                     raise ValueError(f"Ошибка в формате урока: {lesson}")
 
+            # Добавляем пользователя в нормализованное расписание
+            normalized_schedule[user] = {
+                "name": name,
+                "lessons": lessons
+            }
+
         # Сохраняем последнее успешное расписание
-        last_valid_schedule = schedule
+        last_valid_schedule = normalized_schedule
         print(
-            f"Расписание успешно загружено. Пользователей: {len(schedule)}, Уроков: {sum(len(data['lessons']) for data in schedule.values())}")
-        return schedule
+            f"Расписание успешно загружено. Пользователей: {len(normalized_schedule)}, "
+            f"Уроков: {sum(len(data['lessons']) for data in normalized_schedule.values())}"
+        )
+        return normalized_schedule
 
     except requests.RequestException as e:
         print(f"Ошибка загрузки расписания с GitHub: {e}")
@@ -279,6 +294,7 @@ def load_default_schedule():
     # Если произошла ошибка, возвращаем последнее валидное расписание
     print(f"Возвращаем последнее валидное расписание.")
     return last_valid_schedule
+
 
 def reset_schedule():
     """Сбрасывает расписание к стандартному."""
