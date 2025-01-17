@@ -19,7 +19,7 @@
         {"day": "Воскресенье", "time": "15:00", "description": ""},
         {"day": "Воскресенье", "time": "19:00", "description": ""}
     ],
-    "RuslanAlmasovich":[
+    "RuslanAlmasovich": [
     {"day": "Понедельник", "time": "08:00", "description": ""},
     {"day": "Понедельник", "time": "09:00", "description": ""},
     {"day": "Понедельник", "time": "10:00", "description": ""},
@@ -111,17 +111,15 @@
     {"day": "Воскресенье", "time": "18:00", "description": ""},
     {"day": "Воскресенье", "time": "19:00", "description": ""}
 ],
-   "Артем (FF2)":[
-        {"day": "Понедельник", "time": "20:00", "description": ""},
-        {"day": "Вторник", "time": "20:00", "description": ""},
-        {"day": "Пятница", "time": "20:00", "description": ""}
-    ]
-,
+   "Азамат (FF2)":[
+        {"day": "Вторник", "time": "16:00", "description": ""},
+        {"day": "Четверг", "time": "16:00", "description": ""}
+    ],
     "relxia": [
         {"day": "Понедельник", "time": "17:00", "description": ""},
         {"day": "Вторник", "time": "17:00", "description": ""}
     ],
-    "Давид"[
+    "Давид": [
         {"day": "Понедельник", "time": "18:30", "description": ""},
         {"day": "Четверг", "time": "18:00", "description": ""}
     ],
@@ -133,11 +131,15 @@
         {"day": "Вторник", "time": "19:00", "description": ""},
         {"day": "Четверг", "time": "19:00", "description": ""}
     ],
-    "FF0":[
+    "FF0": [
         {"day": "Вторник", "time": "20:00", "description": "40 мин"},
         {"day": "Четверг", "time": "19:00", "description": "40 мин"}
     ],
-    
+    "Артем (FF2)": [
+        {"day": "Понедельник", "time": "20:00", "description": ""},
+        {"day": "Вторник", "time": "20:00", "description": ""},
+        {"day": "Пятница", "time": "20:00", "description": ""}
+    ],
     "Карим": [
         {"day": "Среда", "time": "20:00", "description": ""}
     ]
