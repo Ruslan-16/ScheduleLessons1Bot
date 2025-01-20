@@ -15,7 +15,7 @@ load_dotenv()
 logging.basicConfig()
 logging.getLogger('apscheduler').setLevel(logging.DEBUG)
 # --- Переменные окружения ---
-BOT_TOKEN= os.getenv("BOT_TOKEN")
+BOT_TOKEN= "7843267156:AAHGuD8B4GAY73ECvkGWnoDIIQMrD6GCsLc"
 ADMIN_ID= 413537120
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/Ruslan-16/ScheduleLessons1Bot/refs/heads/main/users.json"
 # --- Глобальные переменные ---
@@ -124,8 +124,11 @@ async def send_reminders_1h(application):
                     # Отправляем сообщение
                     await application.bot.send_message(
                         chat_id=chat_id,
-                        text=f"Напоминание: у вас занятие через 1 час.\n{day} {time_str} по Мск - {description or 'Без описания'}"
-                    )
+                        text=f"⏰ Напоминание: у вас занятие через 1 час!\n\n"
+                        f"📅 {day}, {time_str} по МСК\n"
+                        f"Описание: {description or 'Без описания'}\n\n"
+                        "Удачи на занятии! 😊"
+                        )
                     sent_reminders_1h.add(reminder_key_1h)
                     print(f"[DEBUG] Напоминание за 1 час отправлено: {reminder_key_1h}")
 
@@ -178,7 +181,10 @@ async def send_reminders_24h(application):
                     # Отправляем сообщение
                     await application.bot.send_message(
                         chat_id=chat_id,
-                        text=f"Напоминание: у вас занятие через 24 часа.\n{day} {time_str} по Мск - {description or 'Без описания'}"
+                        text=f"🔔 Напоминание: у вас занятие через 24 часа.\n\n"
+                        f"📅 {day}, {time_str} по МСК\n"
+                        f"Описание: {description or 'Без описания'}\n\n"
+                        "Подготовьтесь заранее! 👍"
                     )
                     sent_reminders_24h.add(reminder_key_24h)
                     print(f"[DEBUG] Напоминание за 24 часа отправлено: {reminder_key_24h}")
@@ -249,46 +255,102 @@ def load_default_schedule():
         github_raw_url = GITHUB_RAW_URL.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
         response = requests.get(github_raw_url, timeout=10)
         response.raise_for_status()  # Проверяем на ошибки HTTP
+
+        print("[DEBUG] Статус ответа:", response.status_code)
+        print("[DEBUG] Ответ от GitHub:")
+        print(response.text)  # Отладочный вывод тела ответа
+
+        # Парсим JSON
         schedule = response.json()
 
         # Проверяем формат данных
-        if not schedule:
-            raise ValueError("Загружено пустое расписание!")
-        for user, lessons in schedule.items():
-            for lesson in lessons:
-                if not all(key in lesson for key in ['day', 'time']):
-                    raise ValueError(f"Ошибка в формате расписания: {lesson}")
+        if not schedule or not isinstance(schedule, dict):
+            raise ValueError("Загружено пустое или некорректное расписание!")
 
         # Сохраняем последнее успешное расписание
         last_valid_schedule = schedule
-        print(f"Расписание успешно загружено. Пользователей: {len(schedule)}, Уроков: {sum(len(lessons) for lessons in schedule.values())}")
         return schedule
 
     except requests.RequestException as e:
-        print(f"Ошибка загрузки расписания с GitHub: {e}")
-    except (json.JSONDecodeError, ValueError) as e:
-        print(f"Ошибка: Файл расписания содержит некорректные данные. {e}")
+        print(f"[ERROR] Ошибка загрузки расписания с GitHub: {e}")
+    except json.JSONDecodeError as e:
+        print(f"[ERROR] Ошибка парсинга JSON: {e}")
+    except ValueError as e:
+        print(f"[ERROR] Ошибка в формате данных: {e}")
 
     # Если произошла ошибка, возвращаем последнее валидное расписание
-    print(f"Возвращаем последнее валидное расписание.")
-    return last_valid_schedule
+    if last_valid_schedule:
+        print(f"[WARNING] Возвращаем последнее валидное расписание.")
+    else:
+        print(f"[ERROR] Нет последнего валидного расписания. Возвращаем пустой словарь.")
+    return last_valid_schedule or {}
+
+def process_schedule(schedule_data):
+    """
+    Обрабатывает данные расписания и возвращает корректное расписание.
+    :param schedule_data: Данные расписания из JSON.
+    :return: Словарь с обработанным расписанием.
+    """
+    processed_schedule = {}
+
+    for user_key, user_data in schedule_data.items():
+        print(f"[DEBUG] Обработка пользователя: {user_key}, данные: {user_data}")
+
+        if not isinstance(user_data, dict):
+            print(f"[ERROR] Данные пользователя {user_key} не являются словарём: {type(user_data)}")
+            continue
+
+        schedule = user_data.get("schedule")
+        if not isinstance(schedule, list):
+            print(f"[ERROR] Поле 'schedule' у {user_key} отсутствует или некорректно: {type(schedule)}")
+            continue
+
+        valid_schedule = []
+        for lesson in schedule:
+            if not isinstance(lesson, dict):
+                print(f"[ERROR] Урок не является словарём: {lesson}")
+                continue
+
+            day = lesson.get("day")
+            time = lesson.get("time")
+            description = lesson.get("description", "")
+
+            if not day or not time:
+                print(f"[ERROR] Пропущены обязательные поля 'day' или 'time': {lesson}")
+                continue
+
+            valid_schedule.append({"day": day, "time": time, "description": description})
+
+        processed_schedule[user_key] = valid_schedule
+
+    print(f"[DEBUG] Расписание после обработки: {processed_schedule}")
+    return processed_schedule
 
 def reset_schedule():
-    """Сбрасывает расписание к стандартному."""
     global temporary_schedule
     try:
+        print("[DEBUG] Начинаем загрузку расписания...")
         new_schedule = load_default_schedule()
-        if not new_schedule:  # Если расписание пустое
+
+        if not new_schedule:
             raise ValueError("Загружено пустое расписание!")
 
-        temporary_schedule = new_schedule
-        print("Текущее расписание после сброса:", temporary_schedule)
+        # Переводим JSON в удобный формат
+        transformed_schedule = {}
+        for username, data in new_schedule.items():
+            if isinstance(data, dict) and 'name' in data and 'schedule' in data:
+                transformed_schedule[username] = {
+                    "name": data["name"],
+                    "schedule": data["schedule"]
+                }
+            else:
+                raise ValueError(f"Неверный формат данных для {username}: {data}")
 
+        temporary_schedule = transformed_schedule
+        print("[DEBUG] Текущее расписание после трансформации:", temporary_schedule)
     except Exception as e:
         print(f"[ERROR] Ошибка при сбросе расписания: {e}")
-
-    # Очищаем старые напоминания
-    clean_sent_reminders()
+        temporary_schedule = {}
 
 def clean_sent_reminders():
     global sent_reminders_24h, sent_reminders_1h
@@ -346,7 +408,8 @@ async def start(update: Update, context: CallbackContext):
     await update_user_data()
 
     await update.message.reply_text(
-        "Добро пожаловать! Ваше расписание готово!:",
+        "Добро пожаловать в бота расписания! 👋\n"
+        "Ваше расписание уже готово. Используйте меню ниже, чтобы узнать больше. 👇",
         reply_markup=get_main_menu(is_admin=False)
     )
 
@@ -381,18 +444,26 @@ async def update_user_data():
 async def view_schedule(update: Update, context: CallbackContext):
     """Показывает расписание для конкретного ученика."""
     user_name = update.effective_chat.username  # Используем username
-    user_schedule = temporary_schedule.get(user_name)
 
-    if user_schedule:
-        # Генерируем текст расписания из нового формата
-        message = "\n".join([
-            f"{lesson['day']} {lesson['time']} - {lesson['description']}"
-            if lesson.get('description') else f"{lesson['day']} {lesson['time']}"
-            for lesson in user_schedule
-        ])
-        await update.message.reply_text(f"Ваше расписание:\n{message}")
-    else:
-        await update.message.reply_text("У вас нет расписания. Пожалуйста, свяжитесь с администратором.")
+    # Проверяем, есть ли пользователь в расписании
+    if user_name not in temporary_schedule:
+        await update.message.reply_text("Ваше расписание не найдено.")
+        return
+
+    # Получаем расписание пользователя
+    user_schedule = temporary_schedule.get(user_name, [])
+
+    if not user_schedule:
+        await update.message.reply_text("У вас нет запланированных занятий.")
+        return
+
+    # Формируем текст расписания
+    message = "\n".join([
+        f"{lesson['day']} {lesson['time']} - {lesson.get('description', 'Без описания')}"
+        for lesson in user_schedule
+    ])
+
+    await update.message.reply_text(f"Ваше расписание:\n{message}")
 
 async def view_students(update: Update, context: CallbackContext):
     """Показывает список всех зарегистрированных пользователей (только для администратора)."""
@@ -407,10 +478,10 @@ async def view_students(update: Update, context: CallbackContext):
     else:
         # Формируем сообщение со списком зарегистрированных пользователей
         message = "\n".join([f"@{username}" for username in user_data.keys()])
-        await update.message.reply_text(f"Список зарегистрированных пользователей:\n{message}")
+        await update.message.reply_text(f"Список зарегистрированных пользователей🧑‍🏫:\n{message}")
 
 async def view_all(update: Update, context: CallbackContext):
-    """Показывает всё расписание (только для администратора)."""
+    """Показывает всё расписание с именами (только для администратора)."""
     if update.effective_chat.id != ADMIN_ID:
         await update.message.reply_text("У вас нет прав для выполнения этой команды.")
         return
@@ -422,10 +493,11 @@ async def view_all(update: Update, context: CallbackContext):
     try:
         # Перебираем всех пользователей и их расписания
         message = "\n\n".join([
-            f"{user}:\n" + "\n".join(
-                [f"{lesson['day']} {lesson['time']} - {lesson['description']}" for lesson in lessons]
+            f"👤 {user_data.get('name', 'Имя не указано')} (@{user}):\n" + "\n".join(
+                [f"📅 {lesson['day']} {lesson['time']} - {lesson.get('description', 'Без описания')}"
+                 for lesson in user_data['schedule']]
             )
-            for user, lessons in temporary_schedule.items()
+            for user, user_data in temporary_schedule.items()
         ])
         await update.message.reply_text(f"Все расписание:\n\n{message}")
     except Exception as e:
@@ -438,7 +510,10 @@ async def manual_reset(update: Update, context: CallbackContext):
         await update.message.reply_text("У вас нет прав для выполнения этой команды.")
         return
     reset_schedule()
-    await update.message.reply_text("Расписание успешно сброшено к стандартному.")
+    await update.message.reply_text(
+        "🔄 Расписание было успешно сброшено и обновлено.\n"
+        "Вы можете проверить изменения с помощью команды 'Просмотреть всё расписание'."
+    )
 
 async def add_schedule(update: Update, context: CallbackContext):
     """Добавляет или изменяет расписание конкретного пользователя (только для администратора)."""
@@ -465,16 +540,19 @@ async def add_schedule(update: Update, context: CallbackContext):
 # --- Кнопки меню ---
 def get_main_menu(is_admin=False):
     """Создаёт меню клавиатуры."""
+    buttons = [[KeyboardButton("Старт")]]  # Кнопка "Старт" будет доступна всем
+
     if is_admin:
         # Кнопки для администратора
-        buttons = [
+        buttons.extend([
             [KeyboardButton("Просмотреть всё расписание")],
             [KeyboardButton("Редактировать расписание"), KeyboardButton("Сбросить расписание")],
             [KeyboardButton("Ученики")]
-        ]
+        ])
     else:
         # Кнопки для ученика
-        buttons = [[KeyboardButton("Моё расписание")],[KeyboardButton("Старт")]]
+        buttons.append([KeyboardButton("Моё расписание")])
+
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 # --- Обработчик кнопок ---
 async def button_handler(update: Update, context: CallbackContext):
@@ -497,54 +575,86 @@ async def button_handler(update: Update, context: CallbackContext):
         await view_students(update, context)
     else:
         # Обработка неизвестной команды
-        await update.message.reply_text("Неизвестная команда. Пожалуйста, используйте кнопки.")
+        await update.message.reply_text(
+            "❌ К сожалению, я не понял вашу команду.\n"
+            "Пожалуйста, используйте кнопки ниже, чтобы продолжить. 👇"
+        )
 # --- Планировщик задач ---
 def schedule_jobs(application: Application):
+    """
+    Настраивает планировщик задач.
+    """
     try:
-        loop = asyncio.get_event_loop()
+        # Используем безопасный метод для работы с event loop
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
         print(f"[DEBUG] Текущий event_loop: {loop}")
     except RuntimeError as e:
         print(f"[ERROR] Ошибка с event_loop: {e}")
-    """Настраивает планировщик задач."""
-    scheduler = AsyncIOScheduler(event_loop=asyncio.get_event_loop())  # Используем текущий event loop
+        return  # Выходим, если не удалось получить или создать event loop
 
-    # Задача: отправлять напоминания
-    scheduler.add_job(
-        send_reminders_24h,
-        trigger="interval",
-        minutes=15,  # Или другой интервал
-        args=[application],
-        id="send_reminders_24h"
-    )
+    # Инициализируем планировщик
+    scheduler = AsyncIOScheduler(event_loop=loop)
 
-    scheduler.add_job(
-        send_reminders_1h,
-        trigger="interval",
-        minutes=5,  # Интервал
-        args=[application],
-        id="send_reminders_1h"
-    )
-    # Задача: сбрасывать расписание каждую субботу в 23:00
-    scheduler.add_job(
-        reset_schedule,
-        CronTrigger(day_of_week="sun", hour=23, minute=0),
-        id="reset_schedule"
-    )
+    # Добавляем задачи
+    try:
+        # Задача: отправлять напоминания за 24 часа
+        scheduler.add_job(
+            send_reminders_24h,
+            trigger="interval",
+            minutes=15,  # Интервал выполнения задачи
+            args=[application],
+            id="send_reminders_24h"
+        )
+        print("[DEBUG] Задача send_reminders_24h успешно добавлена.")
 
-    # Задача: обновлять список зарегистрированных пользователей каждые 5 минут
-    scheduler.add_job(
-        update_user_data,  # Вызываем напрямую
-        trigger="interval",
-        minutes=5,
-        id="update_user_data"
-    )
-    scheduler.add_job(
-        clean_sent_reminders,
-        CronTrigger(hour=0, minute=0),  # Каждый день в 00:00
-        id="clean_sent_reminders"
-    )
-    scheduler.start()
-    print("Планировщик задач запущен.")
+        # Задача: отправлять напоминания за 1 час
+        scheduler.add_job(
+            send_reminders_1h,
+            trigger="interval",
+            minutes=5,  # Интервал выполнения задачи
+            args=[application],
+            id="send_reminders_1h"
+        )
+        print("[DEBUG] Задача send_reminders_1h успешно добавлена.")
+
+        # Задача: сбрасывать расписание каждую субботу в 23:00
+        scheduler.add_job(
+            reset_schedule,
+            CronTrigger(day_of_week="sun", hour=23, minute=0),
+            id="reset_schedule"
+        )
+        print("[DEBUG] Задача reset_schedule успешно добавлена.")
+
+        # Задача: обновлять список зарегистрированных пользователей каждые 5 минут
+        scheduler.add_job(
+            update_user_data,
+            trigger="interval",
+            minutes=5,
+            id="update_user_data"
+        )
+        print("[DEBUG] Задача update_user_data успешно добавлена.")
+
+        # Задача: очищать старые напоминания каждый день в 00:00
+        scheduler.add_job(
+            clean_sent_reminders,
+            CronTrigger(hour=0, minute=0),
+            id="clean_sent_reminders"
+        )
+        print("[DEBUG] Задача clean_sent_reminders успешно добавлена.")
+    except Exception as e:
+        print(f"[ERROR] Ошибка при добавлении задач в планировщик: {e}")
+
+    # Запускаем планировщик
+    try:
+        scheduler.start()
+        print("Планировщик задач запущен.")
+    except Exception as e:
+        print(f"[ERROR] Ошибка при запуске планировщика: {e}")
 
 async def test_send_message(application):
     """Тест отправки сообщения админу."""
