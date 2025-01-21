@@ -7,6 +7,9 @@ WORKDIR /app
 # Копируем только файлы проекта в контейнер
 COPY . /app
 
+# Копируем файл .env в контейнер
+COPY .env /app/.env
+
 # Устанавливаем pip и зависимости
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
