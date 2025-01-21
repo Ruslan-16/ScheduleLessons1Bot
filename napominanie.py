@@ -424,7 +424,7 @@ async def update_user_data():
     # 1. Добавляем новых пользователей из расписания
     for user_name in temporary_schedule.keys():
         if user_name not in user_data:
-            user_data[user_name] = None  # Пока не зарегистрировались через /start
+            user_data[user_name] = None  # Временно добавляем без chat_id
             print(f"[DEBUG] Добавлен новый пользователь из расписания: {user_name}")
 
     # 2. Удаляем пользователей, которых нет в расписании
@@ -433,11 +433,11 @@ async def update_user_data():
             print(f"[DEBUG] Пользователь {user_name} удалён из user_data (нет в расписании).")
             del user_data[user_name]
 
-    # 3. Удаляем пользователей, которые не зарегистрировались (chat_id = None)
-    for user_name, chat_id in list(user_data.items()):
-        if chat_id is None:
-            print(f"[DEBUG] Пользователь {user_name} не зарегистрирован через /start. Удаляем.")
-            del user_data[user_name]
+    # 3. Устанавливаем временные chat_id для тестов (уберите это на продакшене!)
+    for user_name in user_data.keys():
+        if user_data[user_name] is None:
+            user_data[user_name] = ADMIN_ID  # Используем ADMIN_ID для тестов
+            print(f"[DEBUG] Временно назначен chat_id для {user_name}: {ADMIN_ID}")
 
     # Отладочный вывод итогового состояния user_data
     print("[DEBUG] user_data обновлено:", user_data)
@@ -693,8 +693,7 @@ def main():
     app.add_error_handler(error_handler)
 
     # Запускаем опрос Telegram API (Polling)
-    app.run_polling(timeout=60, read_timeout=60)
-
+    app.run_polling()
 
 
 if __name__ == "__main__":
