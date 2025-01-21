@@ -16,8 +16,7 @@ logging.basicConfig()
 logging.getLogger('apscheduler').setLevel(logging.DEBUG)
 
 # Чтение токена
-BOT_TOKEN = "7843267156:AAHGuD8B4GAY73ECvkGWnoDIIQMrD6GCsLc"
-
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID= 413537120
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/Ruslan-16/ScheduleLessons1Bot/refs/heads/main/users.json"
 # --- Глобальные переменные ---
@@ -694,7 +693,8 @@ def main():
     app.add_error_handler(error_handler)
 
     # Запускаем опрос Telegram API (Polling)
-    app.run_polling()
+    app.run_polling(timeout=60, read_timeout=60)
+
 
 
 if __name__ == "__main__":
