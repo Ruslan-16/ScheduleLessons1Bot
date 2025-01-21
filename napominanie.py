@@ -17,8 +17,11 @@ logging.getLogger('apscheduler').setLevel(logging.DEBUG)
 
 # Чтение токена
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+print(f"[DEBUG] BOT_TOKEN: {BOT_TOKEN}")
 if not BOT_TOKEN:
-    raise ValueError("Переменная окружения BOT_TOKEN не установлена!")
+    print("[ERROR] BOT_TOKEN не найден. Убедитесь, что переменная окружения установлена.")
+    raise ValueError("BOT_TOKEN не найден!")
+
 ADMIN_ID= 413537120
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/Ruslan-16/ScheduleLessons1Bot/refs/heads/main/users.json"
 # --- Глобальные переменные ---
@@ -672,6 +675,12 @@ def main():
     reset_schedule()  # Загружаем расписание с GitHub
 
     app = Application.builder().token(BOT_TOKEN).build()
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=5000,
+        url_path=f"/{BOT_TOKEN}",
+        webhook_url=f"https://ruslan-16-schedulelessons1bot-073e.twc1.net/{BOT_TOKEN}"
+    )
 
     # Настраиваем планировщик
     schedule_jobs(app)
