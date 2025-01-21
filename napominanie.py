@@ -681,7 +681,7 @@ def main():
     app.add_handler(CommandHandler("get_my_id", get_my_id))
 
     print("Бот запущен...")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    app.run_polling()
 
     async def error_handler(update: Update, context: CallbackContext):
         print(f"[ERROR] Произошла ошибка: {context.error}")
