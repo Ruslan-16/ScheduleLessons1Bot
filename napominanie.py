@@ -14,8 +14,11 @@ import asyncio
 load_dotenv()
 logging.basicConfig()
 logging.getLogger('apscheduler').setLevel(logging.DEBUG)
-# --- Переменные окружения ---
-BOT_TOKEN= os.getenv("BOT_TOKEN")
+
+# Чтение токена
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+if not BOT_TOKEN:
+    raise ValueError("Переменная окружения BOT_TOKEN не установлена!")
 ADMIN_ID= 413537120
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/Ruslan-16/ScheduleLessons1Bot/refs/heads/main/users.json"
 # --- Глобальные переменные ---
