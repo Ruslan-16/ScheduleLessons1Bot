@@ -681,7 +681,15 @@ def main():
     app.add_handler(CommandHandler("get_my_id", get_my_id))
 
     print("Бот запущен...")
-    app.run_polling()
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
+
+    async def error_handler(update: Update, context: CallbackContext):
+        print(f"[ERROR] Произошла ошибка: {context.error}")
+        raise context.error
+
+    # Регистрируем обработчик ошибок
+    app.add_error_handler(error_handler)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
