@@ -5,6 +5,6 @@ boto3
 python-dotenv
 aiobotocore[boto3]
 requests
-
+pytz==2023.3
 
 
