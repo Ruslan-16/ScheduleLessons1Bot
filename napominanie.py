@@ -408,7 +408,7 @@ async def start(update: Update, context: CallbackContext):
         user_data[user_name] = user_id
         await update.message.reply_text(
             "Добро пожаловать, администратор! Выберите действие:",
-            reply_markup=get_main_menu(is_admin=True)
+            reply_markup=get_main_menu(is_admin=True)  # Это добавляет кнопки
         )
         return
 
@@ -426,24 +426,7 @@ async def start(update: Update, context: CallbackContext):
     await update.message.reply_text(
         "Добро пожаловать в бота расписания! 👋\n"
         "Ваше расписание уже готово. Используйте меню ниже, чтобы узнать больше.",
-        reply_markup=get_main_menu(is_admin=False)
-    )
-
-    # Проверяем пользователя в расписании
-    if user_name not in temporary_schedule:
-        print(f"[DEBUG] Пользователь {user_name} отсутствует в расписании.")
-        await update.message.reply_text(
-            "Извините, вас нет в расписании. Обратитесь к администратору."
-        )
-        return
-
-    # Регистрация пользователя
-    print(f"[DEBUG] Регистрируем пользователя {user_name}.")
-    user_data[user_name] = user_id
-    await update.message.reply_text(
-        "Добро пожаловать в бота расписания! 👋\n"
-        "Ваше расписание уже готово. Используйте меню ниже, чтобы узнать больше.",
-        reply_markup=get_main_menu(is_admin=False)
+        reply_markup=get_main_menu(is_admin=False)  # Это добавляет кнопки
     )
 
 async def update_user_data():
@@ -570,6 +553,7 @@ def get_main_menu(is_admin=False):
         buttons.append([KeyboardButton("Моё расписание")])
 
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
+
 # --- Обработчик кнопок ---
 async def button_handler(update: Update, context: CallbackContext):
     """Обрабатывает действия при нажатии кнопок."""
@@ -595,6 +579,7 @@ async def button_handler(update: Update, context: CallbackContext):
             "❌ К сожалению, я не понял вашу команду.\n"
             "Пожалуйста, используйте кнопки ниже, чтобы продолжить. 👇"
         )
+
 # --- Планировщик задач ---
 def schedule_jobs(application: Application):
     """Настраивает планировщик задач."""
@@ -687,12 +672,12 @@ def main():
     schedule_jobs(app)
 
     # Регистрируем команды и обработчики
-    app.add_handler(CommandHandler("start", start))  # Обработчик команды /start
-    app.add_handler(CommandHandler("view_all", view_all))  # Просмотр всего расписания
-    app.add_handler(CommandHandler("add_schedule", add_schedule))  # Добавление расписания
-    app.add_handler(CommandHandler("reset", manual_reset))  # Ручной сброс расписания
-    app.add_handler(CommandHandler("get_my_id", get_my_id))  # Получение ID пользователя
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, button_handler))  # Обработка кнопок
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("view_all", view_all))
+    app.add_handler(CommandHandler("add_schedule", add_schedule))
+    app.add_handler(CommandHandler("reset", manual_reset))
+    app.add_handler(CommandHandler("get_my_id", get_my_id))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, button_handler))
 
     print("Бот запущен...")
 
