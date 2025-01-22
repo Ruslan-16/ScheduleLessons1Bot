@@ -657,33 +657,27 @@ def main():
     global temporary_schedule
     reset_schedule()  # Загружаем расписание с GitHub
 
+    # Создаём приложение Telegram
     app = Application.builder().token(BOT_TOKEN).build()
 
     # Настраиваем планировщик
     schedule_jobs(app)
 
     # Регистрируем команды и обработчики
-    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("start", start))  # Обработчик команды /start
     app.add_handler(CommandHandler("view_all", view_all))
     app.add_handler(CommandHandler("add_schedule", add_schedule))
     app.add_handler(CommandHandler("reset", manual_reset))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, button_handler))
     app.add_handler(CommandHandler("get_my_id", get_my_id))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, button_handler))
 
     print("Бот запущен...")
 
-    # Определяем обработчик ошибок
-    async def error_handler(update: Update, context: CallbackContext):
-        print(f"[ERROR] Произошла ошибка: {context.error}")
-        raise context.error
-
-    # Регистрируем обработчик ошибок
-    app.add_error_handler(error_handler)
-
-    # Запускаем опрос Telegram API (Polling)
+    # Отправляем тестовое сообщение администратору
     asyncio.run(test_message(app))
-    app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
 
+    # Запускаем бота (polling)
+    app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
     asyncio.run(main())
