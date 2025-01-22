@@ -330,13 +330,13 @@ def process_schedule(schedule_data):
 def reset_schedule():
     global temporary_schedule
     try:
-        print("[DEBUG] Начинаем загрузку расписания...")
+        print("[DEBUG] Загружаем расписание с GitHub...")
         new_schedule = load_default_schedule()
 
         if not new_schedule:
-            raise ValueError("Загружено пустое расписание!")
+            raise ValueError("[ERROR] Расписание пустое или не загружено!")
 
-        # Переводим JSON в удобный формат
+        print("[DEBUG] Трансформируем расписание...")
         transformed_schedule = {}
         for username, data in new_schedule.items():
             if isinstance(data, dict) and 'name' in data and 'schedule' in data:
@@ -345,13 +345,14 @@ def reset_schedule():
                     "schedule": data["schedule"]
                 }
             else:
-                raise ValueError(f"Неверный формат данных для {username}: {data}")
+                raise ValueError(f"[ERROR] Неверный формат данных для {username}: {data}")
 
         temporary_schedule = transformed_schedule
-        print("[DEBUG] Текущее расписание после трансформации:", temporary_schedule)
+        print(f"[DEBUG] Расписание успешно загружено: {temporary_schedule}")
     except Exception as e:
         print(f"[ERROR] Ошибка при сбросе расписания: {e}")
         temporary_schedule = {}
+
 
 def clean_sent_reminders():
     global sent_reminders_24h, sent_reminders_1h
@@ -375,42 +376,42 @@ def clean_sent_reminders():
     print(f"[DEBUG] Напоминания за 1 час после очистки: {len(sent_reminders_1h)}")
 # --- Функции обработки команд ---
 async def start(update: Update, context: CallbackContext):
-    """Обработка команды /start."""
+    print("[DEBUG] Получена команда /start.")
     user_id = update.effective_chat.id
     user_name = update.effective_chat.username
+    print(f"[DEBUG] user_id: {user_id}, user_name: {user_name}")
 
     if not user_name:
+        print("[DEBUG] У пользователя нет username.")
         await update.message.reply_text(
-            "У вас не установлен username в Telegram. Пожалуйста, добавьте username в настройках Telegram и повторите попытку."
+            "У вас не установлен username в Telegram. Пожалуйста, добавьте username в настройках Telegram."
         )
         return
 
-    # Добавляем администратора в user_data
+    # Если это администратор
     if user_id == ADMIN_ID:
+        print(f"[DEBUG] Администратор {user_name} авторизован.")
         user_data[user_name] = user_id
-        print(f"[DEBUG] Администратор добавлен в user_data: {user_name} -> {user_id}")
         await update.message.reply_text(
             "Добро пожаловать, администратор! Выберите действие:",
             reply_markup=get_main_menu(is_admin=True)
         )
         return
 
-    # Проверяем, есть ли username в расписании
+    # Проверяем пользователя в расписании
     if user_name not in temporary_schedule:
+        print(f"[DEBUG] Пользователь {user_name} отсутствует в расписании.")
         await update.message.reply_text(
-            "Извините, вас нет в расписании. Свяжитесь с администратором, если это ошибка."
+            "Извините, вас нет в расписании. Обратитесь к администратору."
         )
         return
-    # Регистрируем пользователя
+
+    # Регистрация пользователя
+    print(f"[DEBUG] Регистрируем пользователя {user_name}.")
     user_data[user_name] = user_id
-    print(f"[DEBUG] User {user_name} добавлен в user_data: {user_name} -> {user_id}")
-
-    # Немедленно обновляем user_data
-    await update_user_data()
-
     await update.message.reply_text(
         "Добро пожаловать в бота расписания! 👋\n"
-        "Ваше расписание уже готово. Используйте меню ниже, чтобы узнать больше. 👇",
+        "Ваше расписание уже готово. Используйте меню ниже, чтобы узнать больше.",
         reply_markup=get_main_menu(is_admin=False)
     )
 
@@ -424,7 +425,7 @@ async def update_user_data():
     # 1. Добавляем новых пользователей из расписания
     for user_name in temporary_schedule.keys():
         if user_name not in user_data:
-            user_data[user_name] = None  # Временно добавляем без chat_id
+            user_data[user_name] = None  # Пока не зарегистрировались через /start
             print(f"[DEBUG] Добавлен новый пользователь из расписания: {user_name}")
 
     # 2. Удаляем пользователей, которых нет в расписании
@@ -433,11 +434,11 @@ async def update_user_data():
             print(f"[DEBUG] Пользователь {user_name} удалён из user_data (нет в расписании).")
             del user_data[user_name]
 
-    # 3. Устанавливаем временные chat_id для тестов (уберите это на продакшене!)
-    for user_name in user_data.keys():
-        if user_data[user_name] is None:
-            user_data[user_name] = ADMIN_ID  # Используем ADMIN_ID для тестов
-            print(f"[DEBUG] Временно назначен chat_id для {user_name}: {ADMIN_ID}")
+    # 3. Удаляем пользователей, которые не зарегистрировались (chat_id = None)
+    for user_name, chat_id in list(user_data.items()):
+        if chat_id is None:
+            print(f"[DEBUG] Пользователь {user_name} не зарегистрирован через /start. Удаляем.")
+            del user_data[user_name]
 
     # Отладочный вывод итогового состояния user_data
     print("[DEBUG] user_data обновлено:", user_data)
@@ -657,13 +658,19 @@ def schedule_jobs(application: Application):
     except Exception as e:
         print(f"[ERROR] Ошибка при запуске планировщика: {e}")
 
+async def error_handler(update: Update, context: CallbackContext):
+    print(f"[ERROR] Произошла ошибка: {context.error}")
+    if update:
+        await update.message.reply_text("Произошла ошибка. Мы работаем над её устранением.")
+
 async def test_send_message(application):
-    """Тест отправки сообщения админу."""
     try:
+        print("[DEBUG] Тестируем отправку сообщения...")
         await application.bot.send_message(chat_id=ADMIN_ID, text="Тестовое сообщение!")
         print("[DEBUG] Тестовое сообщение отправлено успешно.")
     except Exception as e:
-        print(f"[ERROR] Ошибка отправки тестового сообщения: {e}")
+        print(f"[ERROR] Ошибка при отправке тестового сообщения: {e}")
+
 # --- Главная функция ---
 def main():
     global temporary_schedule
