@@ -368,11 +368,13 @@ def clean_sent_reminders():
     print(f"[DEBUG] Напоминания за 1 час после очистки: {len(sent_reminders_1h)}")
 # --- Функции обработки команд ---
 async def start(update: Update, context: CallbackContext):
+    """Обработчик команды /start."""
     print("[DEBUG] Получена команда /start.")
     user_id = update.effective_chat.id
     user_name = update.effective_chat.username
     print(f"[DEBUG] user_id: {user_id}, user_name: {user_name}")
 
+    # Проверяем, установлен ли username
     if not user_name:
         print("[DEBUG] У пользователя нет username.")
         await update.message.reply_text(
@@ -380,7 +382,7 @@ async def start(update: Update, context: CallbackContext):
         )
         return
 
-    # Если это администратор
+    # Проверяем, является ли пользователь администратором
     if user_id == ADMIN_ID:
         print(f"[DEBUG] Администратор {user_name} авторизован.")
         user_data[user_name] = user_id
@@ -389,6 +391,23 @@ async def start(update: Update, context: CallbackContext):
             reply_markup=get_main_menu(is_admin=True)
         )
         return
+
+    # Проверяем, есть ли пользователь в расписании
+    if user_name not in temporary_schedule:
+        print(f"[DEBUG] Пользователь {user_name} отсутствует в расписании.")
+        await update.message.reply_text(
+            "Извините, вас нет в расписании. Обратитесь к администратору."
+        )
+        return
+
+    # Регистрация пользователя
+    print(f"[DEBUG] Регистрируем пользователя {user_name}.")
+    user_data[user_name] = user_id
+    await update.message.reply_text(
+        "Добро пожаловать в бота расписания! 👋\n"
+        "Ваше расписание уже готово. Используйте меню ниже, чтобы узнать больше.",
+        reply_markup=get_main_menu(is_admin=False)
+    )
 
     # Проверяем пользователя в расписании
     if user_name not in temporary_schedule:
@@ -408,21 +427,15 @@ async def start(update: Update, context: CallbackContext):
     )
 
 async def update_user_data():
-    """Обновляет список зарегистрированных пользователей."""
-    global user_data
-    global temporary_schedule
-
+    """Функция обновления данных о пользователях."""
     print("[DEBUG] Обновление user_data началось...")
+    global user_data, temporary_schedule
 
-    # 1. Добавляем новых пользователей из расписания
     for user_name in temporary_schedule.keys():
         if user_name not in user_data:
-            user_data[user_name] = None  # Пока не зарегистрировались через /start
             print(f"[DEBUG] Добавлен новый пользователь из расписания: {user_name}")
-
-    # 2. Не удаляем пользователей, даже если они не зарегистрированы через /start
-    # Просто оставляем их в user_data с `None` как chat_id.
-    print("[DEBUG] user_data обновлено:", user_data)
+            user_data[user_name] = None  # Пользователь ещё не зарегистрирован
+    print(f"[DEBUG] user_data обновлено: {user_data}")
 
 async def view_schedule(update: Update, context: CallbackContext):
     """Показывает расписание для конкретного ученика."""
@@ -567,31 +580,18 @@ def schedule_jobs(application: Application):
     """
     Настраивает планировщик задач.
     """
-    try:
-        # Используем безопасный метод для работы с event loop
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-        print(f"[DEBUG] Текущий event_loop: {loop}")
-    except RuntimeError as e:
-        print(f"[ERROR] Ошибка с event_loop: {e}")
-        return  # Выходим, если не удалось получить или создать event loop
-
     # Инициализируем планировщик
-    scheduler = AsyncIOScheduler(event_loop=loop)
+    scheduler = AsyncIOScheduler()
 
-    # Добавляем задачи
+    # Добавляем задачи в планировщик
     try:
         # Задача: отправлять напоминания за 24 часа
         scheduler.add_job(
             send_reminders_24h,
             trigger="interval",
             minutes=15,  # Интервал выполнения задачи
-            args=[application],
-            id="send_reminders_24h"
+            id="send_reminders_24h",
+            replace_existing=True  # Заменяет задачу, если она уже существует
         )
         print("[DEBUG] Задача send_reminders_24h успешно добавлена.")
 
@@ -600,8 +600,8 @@ def schedule_jobs(application: Application):
             send_reminders_1h,
             trigger="interval",
             minutes=5,  # Интервал выполнения задачи
-            args=[application],
-            id="send_reminders_1h"
+            id="send_reminders_1h",
+            replace_existing=True
         )
         print("[DEBUG] Задача send_reminders_1h успешно добавлена.")
 
@@ -609,7 +609,8 @@ def schedule_jobs(application: Application):
         scheduler.add_job(
             reset_schedule,
             CronTrigger(day_of_week="sun", hour=23, minute=0),
-            id="reset_schedule"
+            id="reset_schedule",
+            replace_existing=True
         )
         print("[DEBUG] Задача reset_schedule успешно добавлена.")
 
@@ -618,7 +619,8 @@ def schedule_jobs(application: Application):
             update_user_data,
             trigger="interval",
             minutes=5,
-            id="update_user_data"
+            id="update_user_data",
+            replace_existing=True
         )
         print("[DEBUG] Задача update_user_data успешно добавлена.")
 
@@ -626,9 +628,11 @@ def schedule_jobs(application: Application):
         scheduler.add_job(
             clean_sent_reminders,
             CronTrigger(hour=0, minute=0),
-            id="clean_sent_reminders"
+            id="clean_sent_reminders",
+            replace_existing=True
         )
         print("[DEBUG] Задача clean_sent_reminders успешно добавлена.")
+
     except Exception as e:
         print(f"[ERROR] Ошибка при добавлении задач в планировщик: {e}")
 
@@ -652,9 +656,15 @@ async def test_message(application: Application):
         print(f"[ERROR] Не удалось отправить тестовое сообщение: {e}")
 
 # --- Главная функция ---
-def main():
+async def main():
+    """
+    Основная функция запуска бота.
+    """
     global temporary_schedule
-    reset_schedule()  # Загружаем расписание с GitHub
+
+    print("[DEBUG] Загружаем расписание...")
+    # Загружаем расписание (например, с GitHub)
+    await reset_schedule()  # Если это асинхронная функция
 
     # Создаём приложение Telegram
     app = Application.builder().token(BOT_TOKEN).build()
@@ -673,10 +683,10 @@ def main():
     print("Бот запущен...")
 
     # Отправляем тестовое сообщение администратору
-    asyncio.run(test_message(app))
+    await test_message(app)  # Здесь используется await вместо asyncio.run()
 
     # Запускаем бота (polling)
-    app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
+    await app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == "__main__":
