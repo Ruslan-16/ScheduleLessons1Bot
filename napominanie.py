@@ -672,17 +672,19 @@ async def test_message(application: Application):
         print(f"[ERROR] Не удалось отправить тестовое сообщение: {e}")
 
 # --- Главная функция ---
-async def main():
-    """Основная функция запуска бота."""
+def main():
+    """
+    Основная функция запуска бота.
+    """
     global temporary_schedule
 
     print("[DEBUG] Загружаем расписание...")
-    await reset_schedule()
+    reset_schedule()  # Если `reset_schedule` синхронная функция
 
     # Создаём приложение Telegram
     app = Application.builder().token(BOT_TOKEN).build()
 
-    # Настраиваем планировщик задач
+    # Настраиваем планировщик
     schedule_jobs(app)
 
     # Регистрируем команды и обработчики
@@ -695,11 +697,14 @@ async def main():
 
     print("Бот запущен...")
 
-    # Отправляем тестовое сообщение администратору
-    await test_message(app)
+    # Запускаем бота (polling) с использованием event loop
+    try:
+        loop = asyncio.get_event_loop()  # Получаем текущий event loop
+        loop.run_until_complete(test_message(app))  # Отправляем тестовое сообщение администратору
+        app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
+    except RuntimeError as e:
+        print(f"[ERROR] Ошибка с event loop: {e}")
 
-    # Запускаем бота (polling)
-    await app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == "__main__":
