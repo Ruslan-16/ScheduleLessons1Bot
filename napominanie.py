@@ -320,31 +320,51 @@ def process_schedule(schedule_data):
     print(f"[DEBUG] Расписание после обработки: {processed_schedule}")
     return processed_schedule
 
-def reset_schedule():
+
+async def reset_schedule():
+    """Сбрасывает расписание, загружая его с GitHub."""
     global temporary_schedule
+    global last_valid_schedule
+
     try:
         print("[DEBUG] Загружаем расписание с GitHub...")
-        new_schedule = load_default_schedule()
+        github_raw_url = GITHUB_RAW_URL.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
 
-        if not new_schedule:
-            raise ValueError("[ERROR] Расписание пустое или не загружено!")
+        # Выполняем асинхронный запрос
+        response = await asyncio.to_thread(requests.get, github_raw_url, timeout=10)
+        response.raise_for_status()  # Проверяем на ошибки HTTP
 
-        print("[DEBUG] Трансформируем расписание...")
-        transformed_schedule = {}
-        for username, data in new_schedule.items():
-            if isinstance(data, dict) and 'name' in data and 'schedule' in data:
-                transformed_schedule[username] = {
-                    "name": data["name"],
-                    "schedule": data["schedule"]
-                }
-            else:
-                raise ValueError(f"[ERROR] Неверный формат данных для {username}: {data}")
+        print("[DEBUG] Статус ответа:", response.status_code)
+        print("[DEBUG] Ответ от GitHub:", response.text)
 
-        temporary_schedule = transformed_schedule
+        # Парсим JSON
+        schedule = response.json()
+
+        # Проверяем формат данных
+        if not schedule or not isinstance(schedule, dict):
+            raise ValueError("Загружено пустое или некорректное расписание!")
+
+        # Сохраняем последнее успешное расписание
+        last_valid_schedule = schedule
+        temporary_schedule = process_schedule(schedule)
+
         print(f"[DEBUG] Расписание успешно загружено: {temporary_schedule}")
-    except Exception as e:
-        print(f"[ERROR] Ошибка при сбросе расписания: {e}")
-        temporary_schedule = {}
+
+    except requests.RequestException as e:
+        print(f"[ERROR] Ошибка загрузки расписания с GitHub: {e}")
+    except json.JSONDecodeError as e:
+        print(f"[ERROR] Ошибка парсинга JSON: {e}")
+    except ValueError as e:
+        print(f"[ERROR] Ошибка в формате данных: {e}")
+
+        # Если произошла ошибка, возвращаем последнее валидное расписание
+        if last_valid_schedule:
+            print(f"[WARNING] Используем последнее валидное расписание.")
+            temporary_schedule = process_schedule(last_valid_schedule)
+        else:
+            print(f"[ERROR] Нет последнего валидного расписания. Сбрасываем расписание.")
+            temporary_schedule = {}
+
 
 def clean_sent_reminders():
     global sent_reminders_24h, sent_reminders_1h
@@ -577,29 +597,25 @@ async def button_handler(update: Update, context: CallbackContext):
         )
 # --- Планировщик задач ---
 def schedule_jobs(application: Application):
-    """
-    Настраивает планировщик задач.
-    """
-    # Инициализируем планировщик
+    """Настраивает планировщик задач."""
     scheduler = AsyncIOScheduler()
 
-    # Добавляем задачи в планировщик
     try:
         # Задача: отправлять напоминания за 24 часа
         scheduler.add_job(
-            send_reminders_24h,
+            lambda: asyncio.create_task(send_reminders_24h(application)),
             trigger="interval",
-            minutes=15,  # Интервал выполнения задачи
+            minutes=15,
             id="send_reminders_24h",
-            replace_existing=True  # Заменяет задачу, если она уже существует
+            replace_existing=True
         )
         print("[DEBUG] Задача send_reminders_24h успешно добавлена.")
 
         # Задача: отправлять напоминания за 1 час
         scheduler.add_job(
-            send_reminders_1h,
+            lambda: asyncio.create_task(send_reminders_1h(application)),
             trigger="interval",
-            minutes=5,  # Интервал выполнения задачи
+            minutes=5,
             id="send_reminders_1h",
             replace_existing=True
         )
@@ -607,7 +623,7 @@ def schedule_jobs(application: Application):
 
         # Задача: сбрасывать расписание каждую субботу в 23:00
         scheduler.add_job(
-            reset_schedule,
+            lambda: asyncio.create_task(reset_schedule()),
             CronTrigger(day_of_week="sun", hour=23, minute=0),
             id="reset_schedule",
             replace_existing=True
@@ -616,7 +632,7 @@ def schedule_jobs(application: Application):
 
         # Задача: обновлять список зарегистрированных пользователей каждые 5 минут
         scheduler.add_job(
-            update_user_data,
+            lambda: asyncio.create_task(update_user_data()),
             trigger="interval",
             minutes=5,
             id="update_user_data",
@@ -636,12 +652,12 @@ def schedule_jobs(application: Application):
     except Exception as e:
         print(f"[ERROR] Ошибка при добавлении задач в планировщик: {e}")
 
-    # Запускаем планировщик
     try:
         scheduler.start()
         print("Планировщик задач запущен.")
     except Exception as e:
         print(f"[ERROR] Ошибка при запуске планировщика: {e}")
+
 
 async def error_handler(update: Update, context: CallbackContext):
     print(f"[ERROR] Произошла ошибка: {context.error}")
@@ -657,19 +673,16 @@ async def test_message(application: Application):
 
 # --- Главная функция ---
 async def main():
-    """
-    Основная функция запуска бота.
-    """
+    """Основная функция запуска бота."""
     global temporary_schedule
 
     print("[DEBUG] Загружаем расписание...")
-    # Загружаем расписание (например, с GitHub)
-    await reset_schedule()  # Если это асинхронная функция
+    await reset_schedule()
 
     # Создаём приложение Telegram
     app = Application.builder().token(BOT_TOKEN).build()
 
-    # Настраиваем планировщик
+    # Настраиваем планировщик задач
     schedule_jobs(app)
 
     # Регистрируем команды и обработчики
@@ -683,7 +696,7 @@ async def main():
     print("Бот запущен...")
 
     # Отправляем тестовое сообщение администратору
-    await test_message(app)  # Здесь используется await вместо asyncio.run()
+    await test_message(app)
 
     # Запускаем бота (polling)
     await app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
