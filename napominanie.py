@@ -504,11 +504,11 @@ async def view_all(update: Update, context: CallbackContext):
         await update.message.reply_text("Произошла ошибка при отображении расписания.")
 
 async def manual_reset(update: Update, context: CallbackContext):
+    """Ручной сброс расписания (только для администратора)."""
     if update.effective_chat.id != ADMIN_ID:
         await update.message.reply_text("У вас нет прав для выполнения этой команды.")
         return
-
-    await reset_schedule()  # Здесь обязательно await
+    reset_schedule()
     await update.message.reply_text(
         "🔄 Расписание было успешно сброшено и обновлено.\n"
         "Вы можете проверить изменения с помощью команды 'Просмотреть всё расписание'."
@@ -582,18 +582,15 @@ async def button_handler(update: Update, context: CallbackContext):
 
 # --- Планировщик задач ---
 def schedule_jobs(application: Application):
-    """
-    Настраивает планировщик задач.
-    """
+    """Настраивает планировщик задач."""
     scheduler = AsyncIOScheduler()
 
-    # Добавляем задачи в планировщик
     try:
         # Задача: отправлять напоминания за 24 часа
         scheduler.add_job(
-            lambda: asyncio.run(send_reminders_24h(application)),
+            lambda: asyncio.create_task(send_reminders_24h(application)),
             trigger="interval",
-            minutes=15,  # Интервал выполнения задачи
+            minutes=15,
             id="send_reminders_24h",
             replace_existing=True
         )
@@ -601,9 +598,9 @@ def schedule_jobs(application: Application):
 
         # Задача: отправлять напоминания за 1 час
         scheduler.add_job(
-            lambda: asyncio.run(send_reminders_1h(application)),
+            lambda: asyncio.create_task(send_reminders_1h(application)),
             trigger="interval",
-            minutes=5,  # Интервал выполнения задачи
+            minutes=5,
             id="send_reminders_1h",
             replace_existing=True
         )
@@ -611,7 +608,7 @@ def schedule_jobs(application: Application):
 
         # Задача: сбрасывать расписание каждую субботу в 23:00
         scheduler.add_job(
-            lambda: asyncio.run(reset_schedule()),
+            lambda: asyncio.create_task(reset_schedule()),
             CronTrigger(day_of_week="sun", hour=23, minute=0),
             id="reset_schedule",
             replace_existing=True
@@ -620,7 +617,7 @@ def schedule_jobs(application: Application):
 
         # Задача: обновлять список зарегистрированных пользователей каждые 5 минут
         scheduler.add_job(
-            lambda: asyncio.run(update_user_data()),
+            lambda: asyncio.create_task(update_user_data()),
             trigger="interval",
             minutes=5,
             id="update_user_data",
@@ -630,7 +627,7 @@ def schedule_jobs(application: Application):
 
         # Задача: очищать старые напоминания каждый день в 00:00
         scheduler.add_job(
-            lambda: asyncio.run(clean_sent_reminders()),
+            clean_sent_reminders,
             CronTrigger(hour=0, minute=0),
             id="clean_sent_reminders",
             replace_existing=True
@@ -640,7 +637,6 @@ def schedule_jobs(application: Application):
     except Exception as e:
         print(f"[ERROR] Ошибка при добавлении задач в планировщик: {e}")
 
-    # Запускаем планировщик
     try:
         scheduler.start()
         print("Планировщик задач запущен.")
@@ -660,11 +656,14 @@ async def test_message(application: Application):
         print(f"[ERROR] Не удалось отправить тестовое сообщение: {e}")
 
 # --- Главная функция ---
-async def main():
+def main():
+    """
+    Основная функция запуска бота.
+    """
     global temporary_schedule
 
     print("[DEBUG] Загружаем расписание...")
-    await reset_schedule()  # Используем await, так как это асинхронная функция
+    reset_schedule()  # Синхронная функция для загрузки расписания
 
     # Создаём приложение Telegram
     app = Application.builder().token(BOT_TOKEN).build()
@@ -673,7 +672,7 @@ async def main():
     schedule_jobs(app)
 
     # Регистрируем команды и обработчики
-    app.add_handler(CommandHandler("start", start))  # Обработчик команды /start
+    app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("view_all", view_all))
     app.add_handler(CommandHandler("add_schedule", add_schedule))
     app.add_handler(CommandHandler("reset", manual_reset))
@@ -682,11 +681,21 @@ async def main():
 
     print("Бот запущен...")
 
-    # Отправляем тестовое сообщение администратору
-    await test_message(app)  # Здесь используется await вместо asyncio.run()
+    # Управление event loop
+    try:
+        # Получаем текущий event loop
+        loop = asyncio.get_event_loop()
 
-    # Запускаем бота (polling)
-    await app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
+        # Отправляем тестовое сообщение администратору
+        loop.run_until_complete(test_message(app))
+
+        # Запускаем бота (polling)
+        app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
+
+    except RuntimeError as e:
+        print(f"[ERROR] Ошибка с event loop: {e}")
+
+
 
 
 if __name__ == "__main__":
