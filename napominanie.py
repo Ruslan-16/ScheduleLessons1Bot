@@ -673,9 +673,6 @@ def main():
 
     print("Бот запущен...")
 
-    # Отправляем тестовое сообщение администратору
-    asyncio.run(test_message(app))
-
     # Запускаем бота (polling)
     app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
 
