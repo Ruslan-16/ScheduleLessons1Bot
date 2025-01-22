@@ -692,8 +692,7 @@ def main():
     app.add_error_handler(error_handler)
 
     # Запускаем опрос Telegram API (Polling)
-    app.run_polling()
-
+  
     app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
 
 
