@@ -371,7 +371,11 @@ async def start(update: Update, context: CallbackContext):
     print("[DEBUG] Получена команда /start.")
     user_id = update.effective_chat.id
     user_name = update.effective_chat.username
+
+    # Логирование текущего состояния
     print(f"[DEBUG] user_id: {user_id}, user_name: {user_name}")
+    print(f"[DEBUG] Текущее временное расписание: {temporary_schedule}")
+    print(f"[DEBUG] Текущие зарегистрированные пользователи: {user_data}")
 
     if not user_name:
         print("[DEBUG] У пользователя нет username.")
@@ -663,7 +667,7 @@ def main():
     schedule_jobs(app)
 
     # Регистрируем команды и обработчики
-    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("start", start))  
     app.add_handler(CommandHandler("view_all", view_all))
     app.add_handler(CommandHandler("add_schedule", add_schedule))
     app.add_handler(CommandHandler("reset", manual_reset))
