@@ -658,7 +658,6 @@ def schedule_jobs(application: Application):
     except Exception as e:
         print(f"[ERROR] Ошибка при запуске планировщика: {e}")
 
-
 async def error_handler(update: Update, context: CallbackContext):
     print(f"[ERROR] Произошла ошибка: {context.error}")
     if update:
@@ -679,7 +678,7 @@ def main():
     global temporary_schedule
 
     print("[DEBUG] Загружаем расписание...")
-    reset_schedule()  # Если `reset_schedule` синхронная функция
+    reset_schedule()  # Синхронная функция для загрузки расписания
 
     # Создаём приложение Telegram
     app = Application.builder().token(BOT_TOKEN).build()
@@ -689,21 +688,28 @@ def main():
 
     # Регистрируем команды и обработчики
     app.add_handler(CommandHandler("start", start))  # Обработчик команды /start
-    app.add_handler(CommandHandler("view_all", view_all))
-    app.add_handler(CommandHandler("add_schedule", add_schedule))
-    app.add_handler(CommandHandler("reset", manual_reset))
-    app.add_handler(CommandHandler("get_my_id", get_my_id))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, button_handler))
+    app.add_handler(CommandHandler("view_all", view_all))  # Просмотр всего расписания
+    app.add_handler(CommandHandler("add_schedule", add_schedule))  # Добавление расписания
+    app.add_handler(CommandHandler("reset", manual_reset))  # Ручной сброс расписания
+    app.add_handler(CommandHandler("get_my_id", get_my_id))  # Получение ID пользователя
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, button_handler))  # Обработка кнопок
 
     print("Бот запущен...")
 
-    # Запускаем бота (polling) с использованием event loop
+    # Управление event loop
     try:
-        loop = asyncio.get_event_loop()  # Получаем текущий event loop
-        loop.run_until_complete(test_message(app))  # Отправляем тестовое сообщение администратору
+        # Получаем текущий event loop
+        loop = asyncio.get_event_loop()
+
+        # Отправляем тестовое сообщение администратору
+        loop.run_until_complete(test_message(app))
+
+        # Запускаем бота (polling)
         app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
+
     except RuntimeError as e:
         print(f"[ERROR] Ошибка с event loop: {e}")
+
 
 
 
