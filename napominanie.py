@@ -420,19 +420,8 @@ async def update_user_data():
             user_data[user_name] = None  # Пока не зарегистрировались через /start
             print(f"[DEBUG] Добавлен новый пользователь из расписания: {user_name}")
 
-    # 2. Удаляем пользователей, которых нет в расписании
-    for user_name in list(user_data.keys()):
-        if user_name not in temporary_schedule:
-            print(f"[DEBUG] Пользователь {user_name} удалён из user_data (нет в расписании).")
-            del user_data[user_name]
-
-    # 3. Удаляем пользователей, которые не зарегистрировались (chat_id = None)
-    for user_name, chat_id in list(user_data.items()):
-        if chat_id is None:
-            print(f"[DEBUG] Пользователь {user_name} не зарегистрирован через /start. Удаляем.")
-            del user_data[user_name]
-
-    # Отладочный вывод итогового состояния user_data
+    # 2. Не удаляем пользователей, даже если они не зарегистрированы через /start
+    # Просто оставляем их в user_data с `None` как chat_id.
     print("[DEBUG] user_data обновлено:", user_data)
 
 async def view_schedule(update: Update, context: CallbackContext):
