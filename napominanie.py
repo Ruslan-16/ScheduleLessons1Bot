@@ -371,11 +371,7 @@ async def start(update: Update, context: CallbackContext):
     print("[DEBUG] Получена команда /start.")
     user_id = update.effective_chat.id
     user_name = update.effective_chat.username
-
-    # Логирование текущего состояния
     print(f"[DEBUG] user_id: {user_id}, user_name: {user_name}")
-    print(f"[DEBUG] Текущее временное расписание: {temporary_schedule}")
-    print(f"[DEBUG] Текущие зарегистрированные пользователи: {user_data}")
 
     if not user_name:
         print("[DEBUG] У пользователя нет username.")
@@ -648,13 +644,13 @@ async def error_handler(update: Update, context: CallbackContext):
     if update:
         await update.message.reply_text("Произошла ошибка. Мы работаем над её устранением.")
 
-async def test_send_message(application):
+async def test_message(application: Application):
     try:
-        print("[DEBUG] Тестируем отправку сообщения...")
-        await application.bot.send_message(chat_id=ADMIN_ID, text="Тестовое сообщение!")
-        print("[DEBUG] Тестовое сообщение отправлено успешно.")
+        await application.bot.send_message(chat_id=ADMIN_ID, text="Бот запущен и готов к работе.")
+        print("[DEBUG] Тестовое сообщение отправлено администратору.")
     except Exception as e:
-        print(f"[ERROR] Ошибка при отправке тестового сообщения: {e}")
+        print(f"[ERROR] Не удалось отправить тестовое сообщение: {e}")
+
 
 # --- Главная функция ---
 def main():
@@ -667,7 +663,7 @@ def main():
     schedule_jobs(app)
 
     # Регистрируем команды и обработчики
-    app.add_handler(CommandHandler("start", start))  
+    app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("view_all", view_all))
     app.add_handler(CommandHandler("add_schedule", add_schedule))
     app.add_handler(CommandHandler("reset", manual_reset))
@@ -685,7 +681,7 @@ def main():
     app.add_error_handler(error_handler)
 
     # Запускаем опрос Telegram API (Polling)
-  
+    asyncio.run(test_message(app))
     app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
 
 
