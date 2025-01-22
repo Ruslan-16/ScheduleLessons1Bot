@@ -651,7 +651,6 @@ async def test_message(application: Application):
     except Exception as e:
         print(f"[ERROR] Не удалось отправить тестовое сообщение: {e}")
 
-
 # --- Главная функция ---
 def main():
     global temporary_schedule
@@ -673,8 +672,12 @@ def main():
 
     print("Бот запущен...")
 
+    # Отправляем тестовое сообщение администратору
+    asyncio.run(test_message(app))
+
     # Запускаем бота (polling)
     app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
