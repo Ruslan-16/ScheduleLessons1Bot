@@ -287,18 +287,11 @@ def load_default_schedule():
     return last_valid_schedule or {}
 
 def process_schedule(schedule_data):
-    """
-    Обрабатывает данные расписания и возвращает корректное расписание.
-    :param schedule_data: Данные расписания из JSON.
-    :return: Словарь с обработанным расписанием.
-    """
     processed_schedule = {}
 
     for user_key, user_data in schedule_data.items():
-        print(f"[DEBUG] Обработка пользователя: {user_key}, данные: {user_data}")
-
         if not isinstance(user_data, dict):
-            print(f"[ERROR] Данные пользователя {user_key} не являются словарём: {type(user_data)}")
+            print(f"[ERROR] Некорректные данные для пользователя {user_key}: {type(user_data)}")
             continue
 
         schedule = user_data.get("schedule")
@@ -352,7 +345,6 @@ def reset_schedule():
     except Exception as e:
         print(f"[ERROR] Ошибка при сбросе расписания: {e}")
         temporary_schedule = {}
-
 
 def clean_sent_reminders():
     global sent_reminders_24h, sent_reminders_1h
