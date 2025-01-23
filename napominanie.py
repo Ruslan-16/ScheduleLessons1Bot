@@ -45,14 +45,13 @@ local_tz = pytz.timezone('Europe/Moscow')
 # Получаем текущее время в московской временной зоне
 now = datetime.now(pytz.timezone('Europe/Moscow'))  # Устанавливаем МСК
 print(f"Текущее московское время: {now}")
-
+#возьми мое удостоверение личности
 async def get_my_id(update: Update, context: CallbackContext):
     """Возвращает chat_id пользователя."""
     await update.message.reply_text(f"ADMIN_ID: {update.effective_chat.id}")
-
 sent_reminders_24h = set()
 sent_reminders_1h = set()
-
+#рассчитать дату урока
 def calculate_lesson_date(day, time_str, now):
     """
     Рассчитывает ближайшую дату и время занятия.
@@ -92,7 +91,7 @@ def calculate_lesson_date(day, time_str, now):
     lesson_datetime = datetime.combine(lesson_date, lesson_time)
 
     return lesson_datetime
-
+#отправлять напоминания 1 час
 async def send_reminders_1h(application):
     """Отправляет напоминания за 1 час до занятий."""
     now = datetime.now(pytz.timezone('Europe/Moscow'))  # Текущее московское время
@@ -138,7 +137,7 @@ async def send_reminders_1h(application):
                 print(
                     f"[DEBUG] lesson_datetime: {lesson_datetime}, reminder_1h_before: {reminder_1h_before}, now: {now}")
                 print(f"[DEBUG] reminder_5m_window_end: {reminder_5m_window_end}")
-
+#отправлять напоминания 24 часа
 async def send_reminders_24h(application):
     """Отправляет напоминания за 24 часа до занятий."""
     now = datetime.now(pytz.timezone('Europe/Moscow'))  # Текущее московское время
@@ -195,7 +194,7 @@ async def send_reminders_24h(application):
                 print(f"[DEBUG] lesson_datetime: {lesson_datetime}, now: {now}")
 
     print(f"[DEBUG] Напоминания за 24 часа отправлены: {sent_reminders_24h}")
-
+#рассчитать дату урока
 def calculate_lesson_date(day, time_str, now):
     # Проверяем, что день недели корректен
     if day not in list_days:
@@ -231,7 +230,7 @@ def calculate_lesson_date(day, time_str, now):
     print(f"[DEBUG] lesson_date: {lesson_date}, lesson_time: {lesson_time}, lesson_datetime: {lesson_datetime}")
 
     return lesson_datetime
-
+#отправлять напоминания
 async def send_reminders(application):
     """Главная функция для отправки напоминаний."""
     await update_user_data()  # Обновляем список зарегистрированных пользователей перед отправкой напоминаний
@@ -247,7 +246,7 @@ async def send_reminders(application):
     print(f"[DEBUG] Уникальные напоминания в sent_reminders: {sent_reminders}")
 # --- Функции загрузки расписания ---
 last_valid_schedule = {}
-
+#загрузить расписание по умолчанию
 def load_default_schedule():
     """Загружает расписание с GitHub."""
     global last_valid_schedule
@@ -265,11 +264,21 @@ def load_default_schedule():
         schedule = response.json()
 
         # Проверяем формат данных
-        if not schedule or not isinstance(schedule, dict):
-            raise ValueError("Загружено пустое или некорректное расписание!")
+        if not schedule:
+            raise ValueError("Загружено пустое расписание!")
+
+        for user, lessons in schedule.items():
+            if not isinstance(lessons, dict):
+                raise ValueError(f"Ожидается список уроков для пользователя {user}, но получено: {type(lessons)}")
+
+            for lesson in lessons:
+                if not all(key in lesson for key in ['day', 'time']):
+                    raise ValueError(f"Ошибка в формате занятия: {lesson}")
 
         # Сохраняем последнее успешное расписание
         last_valid_schedule = schedule
+        print(
+            f"Расписание успешно загружено. Пользователей: {len(schedule)}, Уроков: {sum(len(lessons) for lessons in schedule.values())}")
         return schedule
 
     except requests.RequestException as e:
@@ -279,13 +288,13 @@ def load_default_schedule():
     except ValueError as e:
         print(f"[ERROR] Ошибка в формате данных: {e}")
 
-    # Если произошла ошибка, возвращаем последнее валидное расписание
+        # Если произошла ошибка, возвращаем последнее валидное расписание
     if last_valid_schedule:
         print(f"[WARNING] Возвращаем последнее валидное расписание.")
     else:
         print(f"[ERROR] Нет последнего валидного расписания. Возвращаем пустой словарь.")
     return last_valid_schedule or {}
-
+#график процесса
 def process_schedule(schedule_data):
     processed_schedule = {}
 
@@ -319,8 +328,7 @@ def process_schedule(schedule_data):
 
     print(f"[DEBUG] Расписание после обработки: {processed_schedule}")
     return processed_schedule
-
-
+#сбросить расписание
 async def reset_schedule():
     """Сбрасывает расписание, загружая его с GitHub."""
     global temporary_schedule
@@ -364,8 +372,7 @@ async def reset_schedule():
         else:
             print(f"[ERROR] Нет последнего валидного расписания. Сбрасываем расписание.")
             temporary_schedule = {}
-
-
+#очистить отправленные напоминания
 def clean_sent_reminders():
     global sent_reminders_24h, sent_reminders_1h
     now = datetime.now(pytz.timezone('Europe/Moscow'))
@@ -428,7 +435,7 @@ async def start(update: Update, context: CallbackContext):
         "Ваше расписание уже готово. Используйте меню ниже, чтобы узнать больше.",
         reply_markup=get_main_menu(is_admin=False)  # Это добавляет кнопки
     )
-
+#обновить данные пользователя
 async def update_user_data():
     """Функция обновления данных о пользователях."""
     print("[DEBUG] Обновление user_data началось...")
@@ -439,7 +446,7 @@ async def update_user_data():
             print(f"[DEBUG] Добавлен новый пользователь из расписания: {user_name}")
             user_data[user_name] = None  # Пользователь ещё не зарегистрирован
     print(f"[DEBUG] user_data обновлено: {user_data}")
-
+#посмотреть расписание
 async def view_schedule(update: Update, context: CallbackContext):
     """Показывает расписание для конкретного ученика."""
     user_name = update.effective_chat.username  # Используем username
@@ -463,7 +470,7 @@ async def view_schedule(update: Update, context: CallbackContext):
     ])
 
     await update.message.reply_text(f"Ваше расписание:\n{message}")
-
+#просмотреть студентов
 async def view_students(update: Update, context: CallbackContext):
     """Показывает список всех зарегистрированных пользователей (только для администратора)."""
     if update.effective_chat.id != ADMIN_ID:
@@ -478,17 +485,15 @@ async def view_students(update: Update, context: CallbackContext):
         # Формируем сообщение со списком зарегистрированных пользователей
         message = "\n".join([f"@{username}" for username in user_data.keys()])
         await update.message.reply_text(f"Список зарегистрированных пользователей🧑‍🏫:\n{message}")
-
+#просмотреть все
 async def view_all(update: Update, context: CallbackContext):
     """Показывает всё расписание с именами (только для администратора)."""
     if update.effective_chat.id != ADMIN_ID:
         await update.message.reply_text("У вас нет прав для выполнения этой команды.")
         return
-
     if not temporary_schedule:
         await update.message.reply_text("Расписание пустое или не загружено.")
         return
-
     try:
         # Перебираем всех пользователей и их расписания
         message = "\n\n".join([
@@ -502,7 +507,7 @@ async def view_all(update: Update, context: CallbackContext):
     except Exception as e:
         print(f"[ERROR] Ошибка формирования расписания: {e}")
         await update.message.reply_text("Произошла ошибка при отображении расписания.")
-
+#ручной сброс
 async def manual_reset(update: Update, context: CallbackContext):
     """Ручной сброс расписания (только для администратора)."""
     if update.effective_chat.id != ADMIN_ID:
@@ -513,7 +518,7 @@ async def manual_reset(update: Update, context: CallbackContext):
         "🔄 Расписание было успешно сброшено и обновлено.\n"
         "Вы можете проверить изменения с помощью команды 'Просмотреть всё расписание'."
     )
-
+#добавить расписание
 async def add_schedule(update: Update, context: CallbackContext):
     """Добавляет или изменяет расписание конкретного пользователя (только для администратора)."""
     if update.effective_chat.id != ADMIN_ID:
@@ -553,7 +558,6 @@ def get_main_menu(is_admin=False):
         buttons.append([KeyboardButton("Моё расписание")])
 
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
-
 # --- Обработчик кнопок ---
 async def button_handler(update: Update, context: CallbackContext):
     """Обрабатывает действия при нажатии кнопок."""
@@ -579,7 +583,6 @@ async def button_handler(update: Update, context: CallbackContext):
             "❌ К сожалению, я не понял вашу команду.\n"
             "Пожалуйста, используйте кнопки ниже, чтобы продолжить. 👇"
         )
-
 # --- Планировщик задач ---
 def schedule_jobs(application: Application):
     """Настраивает планировщик задач."""
@@ -588,7 +591,7 @@ def schedule_jobs(application: Application):
     try:
         # Задача: отправлять напоминания за 24 часа
         scheduler.add_job(
-            lambda: asyncio.create_task(send_reminders_24h(application)),
+            lambda: asyncio.run(send_reminders_24h(application)),
             trigger="interval",
             minutes=15,
             id="send_reminders_24h",
@@ -598,7 +601,7 @@ def schedule_jobs(application: Application):
 
         # Задача: отправлять напоминания за 1 час
         scheduler.add_job(
-            lambda: asyncio.create_task(send_reminders_1h(application)),
+            lambda: asyncio.run(send_reminders_1h(application)),
             trigger="interval",
             minutes=5,
             id="send_reminders_1h",
@@ -608,7 +611,7 @@ def schedule_jobs(application: Application):
 
         # Задача: сбрасывать расписание каждую субботу в 23:00
         scheduler.add_job(
-            lambda: asyncio.create_task(reset_schedule()),
+            lambda: asyncio.run(reset_schedule()),
             CronTrigger(day_of_week="sun", hour=23, minute=0),
             id="reset_schedule",
             replace_existing=True
@@ -617,7 +620,7 @@ def schedule_jobs(application: Application):
 
         # Задача: обновлять список зарегистрированных пользователей каждые 5 минут
         scheduler.add_job(
-            lambda: asyncio.create_task(update_user_data()),
+            lambda: asyncio.run(update_user_data()),
             trigger="interval",
             minutes=5,
             id="update_user_data",
@@ -627,7 +630,7 @@ def schedule_jobs(application: Application):
 
         # Задача: очищать старые напоминания каждый день в 00:00
         scheduler.add_job(
-            clean_sent_reminders,
+            lambda: asyncio.run(clean_sent_reminders()),  # Исправление здесь
             CronTrigger(hour=0, minute=0),
             id="clean_sent_reminders",
             replace_existing=True
@@ -642,19 +645,18 @@ def schedule_jobs(application: Application):
         print("Планировщик задач запущен.")
     except Exception as e:
         print(f"[ERROR] Ошибка при запуске планировщика: {e}")
-
+#обработчик ошибок
 async def error_handler(update: Update, context: CallbackContext):
     print(f"[ERROR] Произошла ошибка: {context.error}")
     if update:
         await update.message.reply_text("Произошла ошибка. Мы работаем над её устранением.")
-
+#тестовое сообщение
 async def test_message(application: Application):
     try:
         await application.bot.send_message(chat_id=ADMIN_ID, text="Бот запущен и готов к работе.")
         print("[DEBUG] Тестовое сообщение отправлено администратору.")
     except Exception as e:
         print(f"[ERROR] Не удалось отправить тестовое сообщение: {e}")
-
 # --- Главная функция ---
 def main():
     """
@@ -694,9 +696,6 @@ def main():
 
     except RuntimeError as e:
         print(f"[ERROR] Ошибка с event loop: {e}")
-
-
-
 
 if __name__ == "__main__":
     asyncio.run(main())
