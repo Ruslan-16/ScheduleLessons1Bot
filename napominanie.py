@@ -585,61 +585,75 @@ async def button_handler(update: Update, context: CallbackContext):
         )
 # --- Планировщик задач ---
 def schedule_jobs(application: Application):
-    """Настраивает планировщик задач."""
-    scheduler = AsyncIOScheduler()
+    """
+    Настраивает планировщик задач.
+    """
+    try:
+        # Используем безопасный метод для работы с event loop
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
 
+        print(f"[DEBUG] Текущий event_loop: {loop}")
+    except RuntimeError as e:
+        print(f"[ERROR] Ошибка с event_loop: {e}")
+        return  # Выходим, если не удалось получить или создать event loop
+
+    # Инициализируем планировщик
+    scheduler = AsyncIOScheduler(event_loop=loop)
+
+    # Добавляем задачи
     try:
         # Задача: отправлять напоминания за 24 часа
         scheduler.add_job(
-            lambda: asyncio.run(send_reminders_24h(application)),
+            send_reminders_24h,
             trigger="interval",
-            minutes=15,
-            id="send_reminders_24h",
-            replace_existing=True
+            minutes=15,  # Интервал выполнения задачи
+            args=[application],
+            id="send_reminders_24h"
         )
         print("[DEBUG] Задача send_reminders_24h успешно добавлена.")
 
         # Задача: отправлять напоминания за 1 час
         scheduler.add_job(
-            lambda: asyncio.run(send_reminders_1h(application)),
+            send_reminders_1h,
             trigger="interval",
-            minutes=5,
-            id="send_reminders_1h",
-            replace_existing=True
+            minutes=5,  # Интервал выполнения задачи
+            args=[application],
+            id="send_reminders_1h"
         )
         print("[DEBUG] Задача send_reminders_1h успешно добавлена.")
 
         # Задача: сбрасывать расписание каждую субботу в 23:00
         scheduler.add_job(
-            lambda: asyncio.run(reset_schedule()),
+            reset_schedule,
             CronTrigger(day_of_week="sun", hour=23, minute=0),
-            id="reset_schedule",
-            replace_existing=True
+            id="reset_schedule"
         )
         print("[DEBUG] Задача reset_schedule успешно добавлена.")
 
         # Задача: обновлять список зарегистрированных пользователей каждые 5 минут
         scheduler.add_job(
-            lambda: asyncio.run(update_user_data()),
+            update_user_data,
             trigger="interval",
             minutes=5,
-            id="update_user_data",
-            replace_existing=True
+            id="update_user_data"
         )
         print("[DEBUG] Задача update_user_data успешно добавлена.")
 
         # Задача: очищать старые напоминания каждый день в 00:00
         scheduler.add_job(
-            lambda: asyncio.run(clean_sent_reminders()),  # Исправление здесь
+            clean_sent_reminders,
             CronTrigger(hour=0, minute=0),
-            id="clean_sent_reminders",
-            replace_existing=True
+            id="clean_sent_reminders"
         )
         print("[DEBUG] Задача clean_sent_reminders успешно добавлена.")
-
     except Exception as e:
         print(f"[ERROR] Ошибка при добавлении задач в планировщик: {e}")
 
+    # Запускаем планировщик
     try:
         scheduler.start()
         print("Планировщик задач запущен.")
