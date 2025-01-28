@@ -10,13 +10,14 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackCo
 import pytz
 import logging
 import asyncio
+from telegram.error import NetworkError, RetryAfter, TimedOut
+from asyncio import Semaphore
 # Загрузка переменных окружения
 load_dotenv()
 logging.basicConfig()
 logging.getLogger('apscheduler').setLevel(logging.DEBUG)
-
-# Чтение токена
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+# --- Переменные окружения ---
+BOT_TOKEN= "7843267156:AAHGuD8B4GAY73ECvkGWnoDIIQMrD6GCsLc"
 ADMIN_ID= 413537120
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/Ruslan-16/ScheduleLessons1Bot/refs/heads/main/users.json"
 # --- Глобальные переменные ---
@@ -45,13 +46,29 @@ local_tz = pytz.timezone('Europe/Moscow')
 # Получаем текущее время в московской временной зоне
 now = datetime.now(pytz.timezone('Europe/Moscow'))  # Устанавливаем МСК
 print(f"Текущее московское время: {now}")
-#возьми мое удостоверение личности
+
+async def safe_send_message(bot, chat_id, text):
+    """Безопасная отправка сообщения с обработкой ошибок."""
+    try:
+        await bot.send_message(chat_id=chat_id, text=text)
+    except RetryAfter as e:
+        print(f"[WARNING] Превышен лимит запросов. Повтор через {e.retry_after} секунд.")
+        await asyncio.sleep(e.retry_after)
+        await safe_send_message(bot, chat_id, text)
+    except (NetworkError, TimedOut) as e:
+        print(f"[ERROR] Ошибка сети: {e}. Повтор через 5 секунд.")
+        await asyncio.sleep(5)  # Ожидание перед повтором
+        await safe_send_message(bot, chat_id, text)
+    except Exception as e:
+        print(f"[ERROR] Непредвиденная ошибка при отправке сообщения: {e}")
+
 async def get_my_id(update: Update, context: CallbackContext):
     """Возвращает chat_id пользователя."""
     await update.message.reply_text(f"ADMIN_ID: {update.effective_chat.id}")
+
 sent_reminders_24h = set()
 sent_reminders_1h = set()
-#рассчитать дату урока
+
 def calculate_lesson_date(day, time_str, now):
     """
     Рассчитывает ближайшую дату и время занятия.
@@ -91,7 +108,7 @@ def calculate_lesson_date(day, time_str, now):
     lesson_datetime = datetime.combine(lesson_date, lesson_time)
 
     return lesson_datetime
-#отправлять напоминания 1 час
+
 async def send_reminders_1h(application):
     """Отправляет напоминания за 1 час до занятий."""
     now = datetime.now(pytz.timezone('Europe/Moscow'))  # Текущее московское время
@@ -125,10 +142,10 @@ async def send_reminders_1h(application):
                     await application.bot.send_message(
                         chat_id=chat_id,
                         text=f"⏰ Напоминание: у вас занятие через 1 час!\n\n"
-                        f"📅 {day}, {time_str} по МСК\n"
-                        f"Описание: {description or 'Без описания'}\n\n"
-                        "Удачи на занятии! 😊"
-                        )
+                             f"📅 {day}, {time_str} по МСК\n"
+                             f"Описание: {description or 'Без описания'}\n\n"
+                             "Удачи на занятии! 😊"
+                    )
                     sent_reminders_1h.add(reminder_key_1h)
                     print(f"[DEBUG] Напоминание за 1 час отправлено: {reminder_key_1h}")
 
@@ -137,7 +154,7 @@ async def send_reminders_1h(application):
                 print(
                     f"[DEBUG] lesson_datetime: {lesson_datetime}, reminder_1h_before: {reminder_1h_before}, now: {now}")
                 print(f"[DEBUG] reminder_5m_window_end: {reminder_5m_window_end}")
-#отправлять напоминания 24 часа
+
 async def send_reminders_24h(application):
     """Отправляет напоминания за 24 часа до занятий."""
     now = datetime.now(pytz.timezone('Europe/Moscow'))  # Текущее московское время
@@ -182,9 +199,9 @@ async def send_reminders_24h(application):
                     await application.bot.send_message(
                         chat_id=chat_id,
                         text=f"🔔 Напоминание: у вас занятие через 24 часа.\n\n"
-                        f"📅 {day}, {time_str} по МСК\n"
-                        f"Описание: {description or 'Без описания'}\n\n"
-                        "Подготовьтесь заранее! 👍"
+                             f"📅 {day}, {time_str} по МСК\n"
+                             f"Описание: {description or 'Без описания'}\n\n"
+                             "Подготовьтесь заранее! 👍"
                     )
                     sent_reminders_24h.add(reminder_key_24h)
                     print(f"[DEBUG] Напоминание за 24 часа отправлено: {reminder_key_24h}")
@@ -194,43 +211,7 @@ async def send_reminders_24h(application):
                 print(f"[DEBUG] lesson_datetime: {lesson_datetime}, now: {now}")
 
     print(f"[DEBUG] Напоминания за 24 часа отправлены: {sent_reminders_24h}")
-#рассчитать дату урока
-def calculate_lesson_date(day, time_str, now):
-    # Проверяем, что день недели корректен
-    if day not in list_days:
-        raise ValueError(f"Неверный день недели: {day}")
 
-    # Индексы текущего дня недели и дня занятия
-    current_day_index = now.weekday()  # 0 - Понедельник, 6 - Воскресенье
-    lesson_day_index = list_days.index(day)
-
-    # Определяем, через сколько дней будет занятие
-    if lesson_day_index == current_day_index:
-        lesson_time = datetime.strptime(time_str, "%H:%M").time()
-        if now.time() >= lesson_time:
-            days_to_lesson = 7  # Переносим занятие на следующую неделю
-        else:
-            days_to_lesson = 0  # Занятие ещё не началось
-    elif lesson_day_index > current_day_index:
-        days_to_lesson = lesson_day_index - current_day_index
-    else:
-        days_to_lesson = 7 - (current_day_index - lesson_day_index)
-
-    # Рассчитываем итоговую дату и время занятия
-    lesson_date = now.date() + timedelta(days=days_to_lesson)
-    lesson_time = datetime.strptime(time_str, "%H:%M").time()
-    lesson_datetime = datetime.combine(lesson_date, lesson_time)
-
-    # Устанавливаем московскую временную зону
-    moscow_tz = pytz.timezone('Europe/Moscow')
-    if lesson_datetime.tzinfo is None:
-        lesson_datetime = moscow_tz.localize(lesson_datetime)
-
-    # Отладочный вывод
-    print(f"[DEBUG] lesson_date: {lesson_date}, lesson_time: {lesson_time}, lesson_datetime: {lesson_datetime}")
-
-    return lesson_datetime
-#отправлять напоминания
 async def send_reminders(application):
     """Главная функция для отправки напоминаний."""
     await update_user_data()  # Обновляем список зарегистрированных пользователей перед отправкой напоминаний
@@ -246,7 +227,7 @@ async def send_reminders(application):
     print(f"[DEBUG] Уникальные напоминания в sent_reminders: {sent_reminders}")
 # --- Функции загрузки расписания ---
 last_valid_schedule = {}
-#загрузить расписание по умолчанию
+
 def load_default_schedule():
     """Загружает расписание с GitHub."""
     global last_valid_schedule
@@ -254,125 +235,92 @@ def load_default_schedule():
         # Формируем корректный URL
         github_raw_url = GITHUB_RAW_URL.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
         response = requests.get(github_raw_url, timeout=10)
-        response.raise_for_status()  # Проверяем на ошибки HTTP
+        response.raise_for_status()  # Проверяем успешность запроса
 
-        print("[DEBUG] Статус ответа:", response.status_code)
-        print("[DEBUG] Ответ от GitHub:")
-        print(response.text)  # Отладочный вывод тела ответа
-
-        # Парсим JSON
+        # Парсим JSON-данные
         schedule = response.json()
+        print("[DEBUG] Загруженное расписание:", schedule)  # Отладочный вывод
 
-        # Проверяем формат данных
-        if not schedule:
-            raise ValueError("Загружено пустое расписание!")
+        # Проверяем структуру расписания
+        valid_schedule = {}
+        for user, data in schedule.items():
+            if not isinstance(data, dict) or 'schedule' not in data:
+                print(f"[WARNING] Некорректные данные для пользователя {user}. Пропускаем.")
+                continue
 
-        for user, lessons in schedule.items():
-            if not isinstance(lessons, dict):
-                raise ValueError(f"Ожидается список уроков для пользователя {user}, но получено: {type(lessons)}")
+            if not isinstance(data['schedule'], list):
+                print(f"[WARNING] Расписание для пользователя {user} некорректное. Пропускаем.")
+                continue
 
-            for lesson in lessons:
-                if not all(key in lesson for key in ['day', 'time']):
-                    raise ValueError(f"Ошибка в формате занятия: {lesson}")
+            # Проверяем каждый элемент расписания
+            valid_lessons = []
+            for lesson in data['schedule']:
+                if not isinstance(lesson, dict) or 'day' not in lesson or 'time' not in lesson:
+                    print(f"[WARNING] Некорректный урок для пользователя {user}: {lesson}. Пропускаем.")
+                    continue
+                valid_lessons.append(lesson)
 
-        # Сохраняем последнее успешное расписание
-        last_valid_schedule = schedule
-        print(
-            f"Расписание успешно загружено. Пользователей: {len(schedule)}, Уроков: {sum(len(lessons) for lessons in schedule.values())}")
-        return schedule
+            if valid_lessons:
+                valid_schedule[user] = {"name": data.get("name", "Без имени"), "schedule": valid_lessons}
+            else:
+                print(f"[WARNING] У пользователя {user} нет валидных уроков. Пропускаем.")
+
+        # Сохраняем последнее валидное расписание
+        if valid_schedule:
+            last_valid_schedule = valid_schedule
+            print("[DEBUG] Последнее валидное расписание сохранено.")
+        else:
+            print("[WARNING] Все данные расписания некорректны. Используем предыдущее валидное расписание.")
+
+        return valid_schedule
 
     except requests.RequestException as e:
         print(f"[ERROR] Ошибка загрузки расписания с GitHub: {e}")
     except json.JSONDecodeError as e:
         print(f"[ERROR] Ошибка парсинга JSON: {e}")
-    except ValueError as e:
-        print(f"[ERROR] Ошибка в формате данных: {e}")
+    except Exception as e:
+        print(f"[ERROR] Неизвестная ошибка: {e}")
 
-        # Если произошла ошибка, возвращаем последнее валидное расписание
+    # Возвращаем последнее валидное расписание в случае ошибки
     if last_valid_schedule:
-        print(f"[WARNING] Возвращаем последнее валидное расписание.")
-    else:
-        print(f"[ERROR] Нет последнего валидного расписания. Возвращаем пустой словарь.")
-    return last_valid_schedule or {}
-#график процесса
-def process_schedule(schedule_data):
-    processed_schedule = {}
+        print("[WARNING] Используется последнее валидное расписание.")
+        return last_valid_schedule
 
-    for user_key, user_data in schedule_data.items():
-        if not isinstance(user_data, dict):
-            print(f"[ERROR] Некорректные данные для пользователя {user_key}: {type(user_data)}")
-            continue
+    # Если ничего не получилось загрузить
+    print("[ERROR] Нет доступного расписания. Возвращаем пустой словарь.")
+    return {}
 
-        schedule = user_data.get("schedule")
-        if not isinstance(schedule, list):
-            print(f"[ERROR] Поле 'schedule' у {user_key} отсутствует или некорректно: {type(schedule)}")
-            continue
-
-        valid_schedule = []
-        for lesson in schedule:
-            if not isinstance(lesson, dict):
-                print(f"[ERROR] Урок не является словарём: {lesson}")
-                continue
-
-            day = lesson.get("day")
-            time = lesson.get("time")
-            description = lesson.get("description", "")
-
-            if not day or not time:
-                print(f"[ERROR] Пропущены обязательные поля 'day' или 'time': {lesson}")
-                continue
-
-            valid_schedule.append({"day": day, "time": time, "description": description})
-
-        processed_schedule[user_key] = valid_schedule
-
-    print(f"[DEBUG] Расписание после обработки: {processed_schedule}")
-    return processed_schedule
-#сбросить расписание
-async def reset_schedule():
-    """Сбрасывает расписание, загружая его с GitHub."""
+def reset_schedule():
+    """Сбрасывает расписание к стандартному."""
     global temporary_schedule
-    global last_valid_schedule
-
     try:
-        print("[DEBUG] Загружаем расписание с GitHub...")
-        github_raw_url = GITHUB_RAW_URL.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
-
-        # Выполняем асинхронный запрос
-        response = await asyncio.to_thread(requests.get, github_raw_url, timeout=10)
-        response.raise_for_status()  # Проверяем на ошибки HTTP
-
-        print("[DEBUG] Статус ответа:", response.status_code)
-        print("[DEBUG] Ответ от GitHub:", response.text)
-
-        # Парсим JSON
-        schedule = response.json()
-
-        # Проверяем формат данных
-        if not schedule or not isinstance(schedule, dict):
+        # Загружаем новое расписание с проверкой формата
+        new_schedule = load_default_schedule()
+        if not new_schedule or not isinstance(new_schedule, dict):  # Если расписание пустое или неверного формата
             raise ValueError("Загружено пустое или некорректное расписание!")
 
-        # Сохраняем последнее успешное расписание
-        last_valid_schedule = schedule
-        temporary_schedule = process_schedule(schedule)
+        # Проверяем корректность каждого пользователя и его расписания
+        validated_schedule = {}
+        for user, data in new_schedule.items():
+            if not isinstance(data, dict) or not isinstance(data.get('schedule'), list):
+                print(f"[WARNING] Расписание для пользователя {user} некорректное. Пропускаем.")
+                continue
+            # Добавляем валидированные данные в новое расписание
+            validated_schedule[user] = data
 
-        print(f"[DEBUG] Расписание успешно загружено: {temporary_schedule}")
+        if not validated_schedule:  # Если после проверки нет валидных данных
+            raise ValueError("После проверки расписание оказалось пустым!")
 
-    except requests.RequestException as e:
-        print(f"[ERROR] Ошибка загрузки расписания с GitHub: {e}")
-    except json.JSONDecodeError as e:
-        print(f"[ERROR] Ошибка парсинга JSON: {e}")
-    except ValueError as e:
-        print(f"[ERROR] Ошибка в формате данных: {e}")
+        # Присваиваем временной переменной проверенное расписание
+        temporary_schedule = validated_schedule
+        print("[DEBUG] Текущее расписание после сброса:", temporary_schedule)
 
-        # Если произошла ошибка, возвращаем последнее валидное расписание
-        if last_valid_schedule:
-            print(f"[WARNING] Используем последнее валидное расписание.")
-            temporary_schedule = process_schedule(last_valid_schedule)
-        else:
-            print(f"[ERROR] Нет последнего валидного расписания. Сбрасываем расписание.")
-            temporary_schedule = {}
-#очистить отправленные напоминания
+    except Exception as e:
+        print(f"[ERROR] Ошибка при сбросе расписания: {e}")
+
+    # Очищаем старые напоминания
+    clean_sent_reminders()
+
 def clean_sent_reminders():
     global sent_reminders_24h, sent_reminders_1h
     now = datetime.now(pytz.timezone('Europe/Moscow'))
@@ -395,82 +343,110 @@ def clean_sent_reminders():
     print(f"[DEBUG] Напоминания за 1 час после очистки: {len(sent_reminders_1h)}")
 # --- Функции обработки команд ---
 async def start(update: Update, context: CallbackContext):
-    """Обработчик команды /start."""
-    print("[DEBUG] Получена команда /start.")
+    """Обработка команды /start."""
     user_id = update.effective_chat.id
     user_name = update.effective_chat.username
-    print(f"[DEBUG] user_id: {user_id}, user_name: {user_name}")
 
-    # Проверяем, установлен ли username
     if not user_name:
-        print("[DEBUG] У пользователя нет username.")
         await update.message.reply_text(
-            "У вас не установлен username в Telegram. Пожалуйста, добавьте username в настройках Telegram."
+            "У вас не установлен username в Telegram. Пожалуйста, добавьте username в настройках Telegram и повторите попытку."
         )
         return
 
-    # Проверяем, является ли пользователь администратором
+    # Добавляем администратора в user_data
     if user_id == ADMIN_ID:
-        print(f"[DEBUG] Администратор {user_name} авторизован.")
         user_data[user_name] = user_id
+        print(f"[DEBUG] Администратор добавлен в user_data: {user_name} -> {user_id}")
         await update.message.reply_text(
             "Добро пожаловать, администратор! Выберите действие:",
-            reply_markup=get_main_menu(is_admin=True)  # Это добавляет кнопки
+            reply_markup=get_main_menu(is_admin=True)
         )
         return
 
-    # Проверяем, есть ли пользователь в расписании
+    # Проверяем, есть ли username в расписании
     if user_name not in temporary_schedule:
-        print(f"[DEBUG] Пользователь {user_name} отсутствует в расписании.")
         await update.message.reply_text(
-            "Извините, вас нет в расписании. Обратитесь к администратору."
+            "Извините, вас нет в расписании. Свяжитесь с администратором, если это ошибка."
         )
         return
-
-    # Регистрация пользователя
-    print(f"[DEBUG] Регистрируем пользователя {user_name}.")
+    # Регистрируем пользователя
     user_data[user_name] = user_id
+    print(f"[DEBUG] User {user_name} добавлен в user_data: {user_name} -> {user_id}")
+
+    # Немедленно обновляем user_data
+    await update_user_data()
+
     await update.message.reply_text(
         "Добро пожаловать в бота расписания! 👋\n"
-        "Ваше расписание уже готово. Используйте меню ниже, чтобы узнать больше.",
-        reply_markup=get_main_menu(is_admin=False)  # Это добавляет кнопки
+        "Ваше расписание уже готово. Используйте меню ниже, чтобы узнать больше. 👇",
+        reply_markup=get_main_menu(is_admin=False)
     )
-#обновить данные пользователя
-async def update_user_data():
-    """Функция обновления данных о пользователях."""
-    print("[DEBUG] Обновление user_data началось...")
-    global user_data, temporary_schedule
 
+async def update_user_data():
+    """Обновляет список зарегистрированных пользователей."""
+    global user_data
+    global temporary_schedule
+
+    print("[DEBUG] Обновление user_data началось...")
+
+    # Проверяем данные расписания и удаляем некорректные
+    for user, data in list(temporary_schedule.items()):
+        if not isinstance(data, list):  # Если расписание не список
+            print(f"[WARNING] Некорректные данные для пользователя {user}. Удаляем.")
+            del temporary_schedule[user]
+            continue
+
+        # Оставляем только корректные занятия
+        temporary_schedule[user] = [
+            lesson for lesson in data if isinstance(lesson, dict) and 'day' in lesson and 'time' in lesson
+        ]
+
+    # Добавляем новых пользователей из расписания
     for user_name in temporary_schedule.keys():
         if user_name not in user_data:
+            user_data[user_name] = None  # Пока пользователь не зарегистрировался через /start
             print(f"[DEBUG] Добавлен новый пользователь из расписания: {user_name}")
-            user_data[user_name] = None  # Пользователь ещё не зарегистрирован
-    print(f"[DEBUG] user_data обновлено: {user_data}")
-#посмотреть расписание
+
+    # Удаляем пользователей, которых нет в расписании
+    for user_name in list(user_data.keys()):
+        if user_name not in temporary_schedule:
+            print(f"[DEBUG] Пользователь {user_name} удалён из user_data (нет в расписании).")
+            del user_data[user_name]
+
+    print("[DEBUG] user_data обновлено:", user_data)
+
 async def view_schedule(update: Update, context: CallbackContext):
     """Показывает расписание для конкретного ученика."""
-    user_name = update.effective_chat.username  # Используем username
+    user_name = update.effective_chat.username
+    user_data = temporary_schedule.get(user_name)
 
-    # Проверяем, есть ли пользователь в расписании
-    if user_name not in temporary_schedule:
-        await update.message.reply_text("Ваше расписание не найдено.")
+    # Проверяем, есть ли данные для пользователя
+    if not user_data or not isinstance(user_data, dict) or 'schedule' not in user_data:
+        await update.message.reply_text("У вас нет расписания. Пожалуйста, свяжитесь с администратором.")
         return
 
-    # Получаем расписание пользователя
-    user_schedule = temporary_schedule.get(user_name, [])
+    user_schedule = user_data.get("schedule")
 
-    if not user_schedule:
-        await update.message.reply_text("У вас нет запланированных занятий.")
+    # Проверяем, является ли расписание списком
+    if not isinstance(user_schedule, list):
+        print(f"[WARNING] Некорректное расписание для пользователя {user_name}.")
+        await update.message.reply_text("Ваше расписание содержит ошибку. Свяжитесь с администратором.")
         return
 
     # Формируем текст расписания
     message = "\n".join([
-        f"{lesson['day']} {lesson['time']} - {lesson.get('description', 'Без описания')}"
-        for lesson in user_schedule
+        f"{lesson['day']} {lesson['time']} - {lesson.get('description', '')}"
+        for lesson in user_schedule if isinstance(lesson, dict)  # Убедимся, что урок — словарь
     ])
 
-    await update.message.reply_text(f"Ваше расписание:\n{message}")
-#просмотреть студентов
+    if not message:  # Если после обработки нет корректных уроков
+        await update.message.reply_text("Ваше расписание отсутствует или некорректно.")
+        return
+
+    # Отправляем расписание
+    user_full_name = user_data.get("name", "Неизвестный пользователь")
+    await update.message.reply_text(f"Ваше расписание, {user_full_name}:\n{message}")
+
 async def view_students(update: Update, context: CallbackContext):
     """Показывает список всех зарегистрированных пользователей (только для администратора)."""
     if update.effective_chat.id != ADMIN_ID:
@@ -484,41 +460,64 @@ async def view_students(update: Update, context: CallbackContext):
     else:
         # Формируем сообщение со списком зарегистрированных пользователей
         message = "\n".join([f"@{username}" for username in user_data.keys()])
-        await update.message.reply_text(f"Список зарегистрированных пользователей🧑‍🏫:\n{message}")
-#просмотреть все
+        await update.message.reply_text(f"Список зарегистрированных пользователей:\n{message}")
+
 async def view_all(update: Update, context: CallbackContext):
-    """Показывает всё расписание с именами (только для администратора)."""
+    """Показывает всё расписание (только для администратора)."""
     if update.effective_chat.id != ADMIN_ID:
         await update.message.reply_text("У вас нет прав для выполнения этой команды.")
         return
+
     if not temporary_schedule:
         await update.message.reply_text("Расписание пустое или не загружено.")
         return
+
     try:
-        # Перебираем всех пользователей и их расписания
-        message = "\n\n".join([
-            f"👤 {user_data.get('name', 'Имя не указано')} (@{user}):\n" + "\n".join(
-                [f"📅 {lesson['day']} {lesson['time']} - {lesson.get('description', 'Без описания')}"
-                 for lesson in user_data['schedule']]
-            )
-            for user, user_data in temporary_schedule.items()
-        ])
-        await update.message.reply_text(f"Все расписание:\n\n{message}")
+        message = []
+        for user, data in temporary_schedule.items():
+            # Проверяем корректность данных пользователя
+            if not isinstance(data, dict) or 'schedule' not in data or 'name' not in data:
+                print(f"[WARNING] Некорректные данные для пользователя {user}. Пропускаем.")
+                continue
+
+            # Извлекаем расписание и имя пользователя
+            user_name = data.get('name', user)
+            user_schedule = data.get('schedule', [])
+
+            # Проверяем, что расписание — список
+            if not isinstance(user_schedule, list):
+                print(f"[WARNING] Расписание для пользователя {user_name} некорректное. Пропускаем.")
+                continue
+
+            # Формируем текст расписания для текущего пользователя
+            user_schedule_text = "\n".join([
+                f"{lesson['day']} {lesson['time']} - {lesson.get('description', '')}"
+                for lesson in user_schedule if isinstance(lesson, dict)
+            ])
+
+            if user_schedule_text:  # Добавляем только если есть корректные уроки
+                message.append(f"{user_name}:\n{user_schedule_text}")
+
+        # Проверяем, есть ли что отправить
+        if not message:
+            await update.message.reply_text("Расписание отсутствует или некорректно.")
+            return
+
+        # Отправляем все расписания
+        await update.message.reply_text("\n\n".join(message))
+
     except Exception as e:
         print(f"[ERROR] Ошибка формирования расписания: {e}")
         await update.message.reply_text("Произошла ошибка при отображении расписания.")
-#ручной сброс
+
 async def manual_reset(update: Update, context: CallbackContext):
     """Ручной сброс расписания (только для администратора)."""
     if update.effective_chat.id != ADMIN_ID:
         await update.message.reply_text("У вас нет прав для выполнения этой команды.")
         return
     reset_schedule()
-    await update.message.reply_text(
-        "🔄 Расписание было успешно сброшено и обновлено.\n"
-        "Вы можете проверить изменения с помощью команды 'Просмотреть всё расписание'."
-    )
-#добавить расписание
+    await update.message.reply_text("Расписание успешно сброшено к стандартному.")
+
 async def add_schedule(update: Update, context: CallbackContext):
     """Добавляет или изменяет расписание конкретного пользователя (только для администратора)."""
     if update.effective_chat.id != ADMIN_ID:
@@ -579,10 +578,7 @@ async def button_handler(update: Update, context: CallbackContext):
         await view_students(update, context)
     else:
         # Обработка неизвестной команды
-        await update.message.reply_text(
-            "❌ К сожалению, я не понял вашу команду.\n"
-            "Пожалуйста, используйте кнопки ниже, чтобы продолжить. 👇"
-        )
+        await update.message.reply_text("Неизвестная команда. Пожалуйста, используйте кнопки.")
 # --- Планировщик задач ---
 def schedule_jobs(application: Application):
     """
@@ -659,58 +655,38 @@ def schedule_jobs(application: Application):
         print("Планировщик задач запущен.")
     except Exception as e:
         print(f"[ERROR] Ошибка при запуске планировщика: {e}")
-#обработчик ошибок
-async def error_handler(update: Update, context: CallbackContext):
-    print(f"[ERROR] Произошла ошибка: {context.error}")
-    if update:
-        await update.message.reply_text("Произошла ошибка. Мы работаем над её устранением.")
-#тестовое сообщение
-async def test_message(application: Application):
+
+async def test_send_message(application):
+    """Тест отправки сообщения админу."""
     try:
-        await application.bot.send_message(chat_id=ADMIN_ID, text="Бот запущен и готов к работе.")
-        print("[DEBUG] Тестовое сообщение отправлено администратору.")
+        await application.bot.send_message(chat_id=ADMIN_ID, text="Тестовое сообщение!")
+        print("[DEBUG] Тестовое сообщение отправлено успешно.")
     except Exception as e:
-        print(f"[ERROR] Не удалось отправить тестовое сообщение: {e}")
+        print(f"[ERROR] Ошибка отправки тестового сообщения: {e}")
 # --- Главная функция ---
 def main():
-    """
-    Основная функция запуска бота.
-    """
     global temporary_schedule
+    reset_schedule()  # Загружаем расписание с GitHub
 
-    print("[DEBUG] Загружаем расписание...")
-    reset_schedule()  # Синхронная функция для загрузки расписания
-
-    # Создаём приложение Telegram
     app = Application.builder().token(BOT_TOKEN).build()
 
     # Настраиваем планировщик
     schedule_jobs(app)
-
     # Регистрируем команды и обработчики
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("view_all", view_all))
     app.add_handler(CommandHandler("add_schedule", add_schedule))
     app.add_handler(CommandHandler("reset", manual_reset))
-    app.add_handler(CommandHandler("get_my_id", get_my_id))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, button_handler))
+    app.add_handler(CommandHandler("get_my_id", get_my_id))
 
     print("Бот запущен...")
-
-    # Управление event loop
-    try:
-        # Получаем текущий event loop
-        loop = asyncio.get_event_loop()
-
-        # Отправляем тестовое сообщение администратору
-        loop.run_until_complete(test_message(app))
-
-        # Запускаем бота (polling)
-        app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
-
-    except RuntimeError as e:
-        print(f"[ERROR] Ошибка с event loop: {e}")
+    app.run_polling()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        print(f"[ERROR] Ошибка при запуске бота: {e}")
+
 
