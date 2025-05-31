@@ -14,8 +14,8 @@ from telegram.error import NetworkError, RetryAfter, TimedOut
 
 load_dotenv()
 
-BOT_TOKEN= "7843267156:AAHGuD8B4GAY73ECvkGWnoDIIQMrD6GCsLc"
-ADMIN_ID= 413537120
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/Ruslan-16/ScheduleLessons1Bot/main/users.json"
 
 logging.basicConfig(level=logging.INFO)
