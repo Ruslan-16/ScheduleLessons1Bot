@@ -1,16 +1,16 @@
-FROM python:3.9-slim
+FROM python:3.12-slim
 
 # Устанавливаем рабочую директорию
 WORKDIR /app
 
-# Копируем только файлы проекта в контейнер
+# Копируем файлы проекта в контейнер
 COPY . /app
 
-# Устанавливаем pip и зависимости
+# Устанавливаем зависимости
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
-# Указываем порт (если требуется)
+# Открываем порт (необязательно, если бот работает только с Telegram)
 EXPOSE 5000
 
 # Запуск приложения
