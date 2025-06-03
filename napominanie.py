@@ -74,8 +74,15 @@ async def send_reminders_24h(app):
             lesson_datetime = get_lesson_datetime(lesson['day'], lesson['time'])
             reminder_time = lesson_datetime - timedelta(days=1)
             key = (user_name, lesson_datetime.isoformat(), "24h")
+
             if reminder_time <= now <= reminder_time + timedelta(minutes=15) and key not in sent_reminders_24h:
-                text = f"🔔 Напоминание: завтра {lesson['day']} в {lesson['time']} занятие.\nОписание: {lesson.get('description','')}"
+                text = (
+                    f"🔔 Напоминание заранее (за ~24 часа):\n\n"
+                    f"Hello! 😊 Напоминаем о Вашем предстоящем занятии в {lesson['day']} в {lesson['time']}.\n"
+                    f"Если планы изменятся – пожалуйста, предупредите заранее. 😉\n\n"
+                    f"⏰ Утренние занятия (до 12:00) – предупреждаем за день, иначе занятие сгорает.\n"
+                    f"⏰ Изменения возможны до 20:00 накануне (для занятий до 12:00) или минимум за 4 часа (для занятий после 12:00)."
+                )
                 await safe_send(app.bot, chat_id, text)
                 sent_reminders_24h.add(key)
                 print(f"[DEBUG] Отправлено напоминание за 24 часа: {key}")
@@ -90,11 +97,17 @@ async def send_reminders_1h(app):
             lesson_datetime = get_lesson_datetime(lesson['day'], lesson['time'])
             reminder_time = lesson_datetime - timedelta(hours=1)
             key = (user_name, lesson_datetime.isoformat(), "1h")
+
             if reminder_time <= now <= reminder_time + timedelta(minutes=15) and key not in sent_reminders_1h:
-                text = f"⏰ Напоминание: через час {lesson['day']} в {lesson['time']} занятие.\nОписание: {lesson.get('description','')}"
+                text = (
+                    f"⏰ Напоминание ближе к занятию (за ~1 час):\n\n"
+                    f"Hey there! 🕒 Ваше занятие сегодня в {lesson['time']}.\n"
+                    f"⌛️ Если опаздываете на 5–10 минут, просто дайте знать."
+                )
                 await safe_send(app.bot, chat_id, text)
                 sent_reminders_1h.add(key)
                 print(f"[DEBUG] Отправлено напоминание за 1 час: {key}")
+
 
 async def test_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Тестовая команда для немедленной проверки напоминаний."""
@@ -106,13 +119,18 @@ async def test_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def get_lesson_datetime(day, time_str):
     now = datetime.now(local_tz)
-    days = ["Понедельник","Вторник","Среда","Четверг","Пятница","Суббота","Воскресенье"]
+    days = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
     day_idx = days.index(day)
     now_idx = now.weekday()
     days_ahead = (day_idx - now_idx) % 7
     lesson_date = now.date() + timedelta(days=days_ahead)
     lesson_time = datetime.strptime(time_str, "%H:%M").time()
-    return datetime.combine(lesson_date, lesson_time).replace(tzinfo=local_tz)
+
+    naive_dt = datetime.combine(lesson_date, lesson_time)
+    lesson_datetime = local_tz.localize(naive_dt)
+
+    return lesson_datetime
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_name = update.effective_chat.username
