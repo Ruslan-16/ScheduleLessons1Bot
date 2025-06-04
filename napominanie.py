@@ -77,7 +77,6 @@ async def send_reminders_24h(app):
 
             if reminder_time <= now <= reminder_time + timedelta(minutes=15) and key not in sent_reminders_24h:
                 text = (
-                    f"🔔 Напоминание заранее (за ~24 часа):\n\n"
                     f"Hello! 😊 Напоминаем о Вашем предстоящем занятии в {lesson['day']} в {lesson['time']}.\n"
                     f"Если планы изменятся – пожалуйста, предупредите заранее. 😉\n\n"
                     f"⏰ Утренние занятия (до 12:00) – предупреждаем за день, иначе занятие сгорает.\n"
@@ -100,8 +99,7 @@ async def send_reminders_1h(app):
 
             if reminder_time <= now <= reminder_time + timedelta(minutes=15) and key not in sent_reminders_1h:
                 text = (
-                    f"⏰ Напоминание ближе к занятию (за ~1 час):\n\n"
-                    f"Hey there! 🕒 Ваше занятие сегодня в {lesson['time']}.\n"
+                    f"Hey there! 🕒 Напоминаем, что у Вас сегодня занятие по английскому в {lesson['time']}.\n"
                     f"⌛️ Если опаздываете на 5–10 минут, просто дайте знать."
                 )
                 await safe_send(app.bot, chat_id, text)
@@ -130,14 +128,25 @@ def get_lesson_datetime(day, time_str):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_name = update.effective_chat.username
     user_id = update.effective_chat.id
+    welcome_text = (
+        "Welcome! 😊👋\n"
+        "Я — Ваш бот-помощник 🤖💬\n"
+        "Буду напоминать вам о занятиях, чтобы вы ничего не пропустили 🧠✨\n\n"
+        "🔔 Напоминания приходят за день до занятия и ещё раз — перед началом занятия ⏰📅\n"
+        "А если вдруг захотите сами заглянуть в расписание — я всегда к вашим услугам! 📖"
+    )
+
     if user_id == ADMIN_ID:
         user_data[user_name] = user_id
+        await update.message.reply_text(welcome_text)
         await update.message.reply_text("Добро пожаловать, администратор!", reply_markup=menu(True))
     elif user_name in temporary_schedule:
         user_data[user_name] = user_id
+        await update.message.reply_text(welcome_text)
         await update.message.reply_text("Добро пожаловать!", reply_markup=menu(False))
     else:
         await update.message.reply_text("Вы не в расписании.")
+
 
 def menu(admin=False):
     buttons = [[KeyboardButton("Старт")]]
