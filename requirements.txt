@@ -1,10 +1,9 @@
 
 python-telegram-bot==20.3
 apscheduler==3.10.4
-boto3
-aiobotocore[boto3]
 pytz==2023.3
 python-dotenv==1.0.0
 requests==2.31.0
+
 
 
