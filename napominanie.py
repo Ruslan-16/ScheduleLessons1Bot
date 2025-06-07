@@ -13,6 +13,7 @@ import asyncio
 from telegram.error import NetworkError, RetryAfter, TimedOut
 
 load_dotenv()
+admin_edit_mode = False  # режим ожидания ввода JSON-расписания
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
@@ -153,11 +154,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id == ADMIN_ID:
         user_data[user_name] = user_id
         await update.message.reply_text(welcome_text)
-        await update.message.reply_text("Добро пожаловать, администратор!", reply_markup=menu(True))
     elif user_name in temporary_schedule:
         user_data[user_name] = user_id
         await update.message.reply_text(welcome_text)
-        await update.message.reply_text("Добро пожаловать!", reply_markup=menu(False))
     else:
         await update.message.reply_text("Вы не в расписании.")
 
@@ -172,7 +171,15 @@ def menu(admin=False):
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global admin_edit_mode
     text = update.message.text
+
+    # 🔄 Если включен режим редактирования, обрабатываем JSON
+    if admin_edit_mode and update.effective_chat.id == ADMIN_ID:
+        await handle_admin_input(update, context)
+        admin_edit_mode = False
+        return
+
     if text == "Старт":
         await start(update, context)
     elif text == "Моё расписание":
@@ -186,7 +193,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Неизвестная команда.")
 
+
 async def edit_schedule_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global admin_edit_mode
+    admin_edit_mode = True
     await update.message.reply_text(
         """Введите имя ученика и новое занятие в формате:
 
@@ -266,7 +276,6 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, button_handler))
     app.add_handler(CommandHandler("test_reminders", test_reminders))
-    app.add_handler(MessageHandler(filters.TEXT & filters.User(ADMIN_ID), handle_admin_input))
     print("Бот запущен...")
     app.run_polling()
 
