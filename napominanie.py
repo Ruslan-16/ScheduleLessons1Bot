@@ -116,7 +116,6 @@ async def send_reminders_1h(app):
                 sent_reminders_1h.add(key)
                 print(f"[DEBUG] Отправлено напоминание за 1 час: {key}")
 
-
 async def test_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Тестовая команда для немедленной проверки напоминаний."""
     app = context.application
@@ -139,7 +138,6 @@ def get_lesson_datetime(day, time_str):
 
     return lesson_datetime
 
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_name = update.effective_chat.username
     user_id = update.effective_chat.id
@@ -159,7 +157,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(welcome_text)
     else:
         await update.message.reply_text("Вы не в расписании.")
-
 
 def menu(admin=False):
     buttons = [[KeyboardButton("Старт")]]
@@ -192,7 +189,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await edit_schedule_prompt(update, context)
     else:
         await update.message.reply_text("Неизвестная команда.")
-
 
 async def edit_schedule_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global admin_edit_mode
@@ -229,13 +225,24 @@ async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await update.message.reply_text("Пользователь не найден.")
             return
 
+        # Добавляем новое занятие
         temporary_schedule[user_name]["schedule"].append(new_lesson)
 
-        # Сохраняем обновлённое расписание
+        # Сохраняем в файл
         with open("users.json", "w", encoding="utf-8") as f:
             json.dump(temporary_schedule, f, ensure_ascii=False, indent=4)
 
+        # Подтверждение админу
         await update.message.reply_text(f"Новое занятие добавлено для {user_name}.")
+
+        # Уведомление ученику
+        chat_id = user_data.get(user_name)
+        if chat_id:
+            text = (
+                f"📅 Новое занятие добавлено!\n\n"
+                f"{new_lesson['day']} в {new_lesson['time']} – {new_lesson.get('description', '')}"
+            )
+            await safe_send(context.bot, chat_id, text)
 
     except json.JSONDecodeError:
         await update.message.reply_text("Ошибка: JSON некорректен.")
