@@ -1,0 +1,647 @@
+{
+    "ReginaSchool": {
+        "name": "Регина администратор",
+        "schedule": [
+            {
+                "day": "Понедельник",
+                "time": "08:15",
+                "description": "Грамматика, лексика"
+            },
+            {
+                "day": "Понедельник",
+                "time": "09:15",
+                "description": "Грамматика, лексика"
+            },
+            {
+                "day": "Понедельник",
+                "time": "12:15",
+                "description": "Грамматика, лексика"
+            },
+            {
+                "day": "Вторник",
+                "time": "08:15",
+                "description": "Грамматика, лексика"
+            },
+            {
+                "day": "Вторник",
+                "time": "09:15",
+                "description": "Грамматика, лексика"
+            },
+            {
+                "day": "Вторник",
+                "time": "12:15",
+                "description": "Грамматика, лексика"
+            },
+            {
+                "day": "Среда",
+                "time": "16:15",
+                "description": "проверка"
+            },
+            {
+                "day": "Среда",
+                "time": "17:15",
+                "description": "проверка"
+            },
+            {
+                "day": "Среда",
+                "time": "18:15",
+                "description": "проверка"
+            },
+            {
+                "day": "Четверг",
+                "time": "08:15",
+                "description": "Speaking"
+            },
+            {
+                "day": "Четверг",
+                "time": "11:15",
+                "description": "Speaking"
+            },
+            {
+                "day": "Четверг",
+                "time": "10:35",
+                "description": "Speaking"
+            },
+            {
+                "day": "Четверг",
+                "time": "09:15",
+                "description": "Speaking"
+            },
+            {
+                "day": "Четверг",
+                "time": "17:15",
+                "description": "Speaking"
+            },
+            {
+                "day": "Пятница",
+                "time": "08:15",
+                "description": "Страноведение"
+            },
+            {
+                "day": "Пятница",
+                "time": "10:15",
+                "description": "Страноведение"
+            },
+            {
+                "day": "Воскресенье",
+                "time": "15:00",
+                "description": ""
+            },
+            {
+                "day": "Воскресенье",
+                "time": "19:00",
+                "description": ""
+            }
+        ]
+    },
+    "RuslanAlmasovich": {
+        "name": "Руслан Разработчик",
+        "schedule": [
+            {
+                "day": "Понедельник",
+                "time": "08:00",
+                "description": ""
+            },
+            {
+                "day": "Понедельник",
+                "time": "09:00",
+                "description": ""
+            },
+            {
+                "day": "Понедельник",
+                "time": "10:00",
+                "description": ""
+            },
+            {
+                "day": "Понедельник",
+                "time": "11:00",
+                "description": ""
+            },
+            {
+                "day": "Понедельник",
+                "time": "12:00",
+                "description": ""
+            },
+            {
+                "day": "Понедельник",
+                "time": "13:00",
+                "description": ""
+            },
+            {
+                "day": "Понедельник",
+                "time": "14:00",
+                "description": ""
+            },
+            {
+                "day": "Понедельник",
+                "time": "15:00",
+                "description": ""
+            },
+            {
+                "day": "Понедельник",
+                "time": "16:00",
+                "description": ""
+            },
+            {
+                "day": "Понедельник",
+                "time": "17:00",
+                "description": ""
+            },
+            {
+                "day": "Понедельник",
+                "time": "18:00",
+                "description": ""
+            },
+            {
+                "day": "Понедельник",
+                "time": "19:00",
+                "description": ""
+            },
+            {
+                "day": "Вторник",
+                "time": "08:30",
+                "description": ""
+            },
+            {
+                "day": "Вторник",
+                "time": "09:30",
+                "description": ""
+            },
+            {
+                "day": "Вторник",
+                "time": "10:30",
+                "description": ""
+            },
+            {
+                "day": "Вторник",
+                "time": "11:30",
+                "description": ""
+            },
+            {
+                "day": "Вторник",
+                "time": "12:30",
+                "description": ""
+            },
+            {
+                "day": "Вторник",
+                "time": "13:30",
+                "description": ""
+            },
+            {
+                "day": "Вторник",
+                "time": "14:30",
+                "description": ""
+            },
+            {
+                "day": "Вторник",
+                "time": "15:30",
+                "description": ""
+            },
+            {
+                "day": "Вторник",
+                "time": "16:30",
+                "description": ""
+            },
+            {
+                "day": "Вторник",
+                "time": "17:30",
+                "description": ""
+            },
+            {
+                "day": "Вторник",
+                "time": "18:30",
+                "description": ""
+            },
+            {
+                "day": "Вторник",
+                "time": "19:30",
+                "description": ""
+            },
+            {
+                "day": "Среда",
+                "time": "08:00",
+                "description": ""
+            },
+            {
+                "day": "Среда",
+                "time": "09:00",
+                "description": ""
+            },
+            {
+                "day": "Среда",
+                "time": "10:00",
+                "description": ""
+            },
+            {
+                "day": "Среда",
+                "time": "11:00",
+                "description": ""
+            },
+            {
+                "day": "Среда",
+                "time": "12:00",
+                "description": ""
+            },
+            {
+                "day": "Среда",
+                "time": "13:00",
+                "description": ""
+            },
+            {
+                "day": "Среда",
+                "time": "14:00",
+                "description": ""
+            },
+            {
+                "day": "Среда",
+                "time": "15:00",
+                "description": ""
+            },
+            {
+                "day": "Среда",
+                "time": "16:00",
+                "description": ""
+            },
+            {
+                "day": "Среда",
+                "time": "17:00",
+                "description": ""
+            },
+            {
+                "day": "Среда",
+                "time": "18:00",
+                "description": ""
+            },
+            {
+                "day": "Среда",
+                "time": "19:00",
+                "description": ""
+            },
+            {
+                "day": "Четверг",
+                "time": "08:30",
+                "description": ""
+            },
+            {
+                "day": "Четверг",
+                "time": "09:30",
+                "description": ""
+            },
+            {
+                "day": "Четверг",
+                "time": "10:30",
+                "description": ""
+            },
+            {
+                "day": "Четверг",
+                "time": "11:30",
+                "description": ""
+            },
+            {
+                "day": "Четверг",
+                "time": "12:30",
+                "description": ""
+            },
+            {
+                "day": "Четверг",
+                "time": "13:30",
+                "description": ""
+            },
+            {
+                "day": "Четверг",
+                "time": "14:30",
+                "description": ""
+            },
+            {
+                "day": "Четверг",
+                "time": "15:30",
+                "description": ""
+            },
+            {
+                "day": "Четверг",
+                "time": "16:30",
+                "description": ""
+            },
+            {
+                "day": "Четверг",
+                "time": "17:30",
+                "description": ""
+            },
+            {
+                "day": "Четверг",
+                "time": "18:30",
+                "description": ""
+            },
+            {
+                "day": "Четверг",
+                "time": "19:30",
+                "description": ""
+            },
+            {
+                "day": "Пятница",
+                "time": "08:00",
+                "description": ""
+            },
+            {
+                "day": "Пятница",
+                "time": "09:00",
+                "description": ""
+            },
+            {
+                "day": "Пятница",
+                "time": "10:00",
+                "description": ""
+            },
+            {
+                "day": "Пятница",
+                "time": "11:00",
+                "description": ""
+            },
+            {
+                "day": "Пятница",
+                "time": "12:00",
+                "description": ""
+            },
+            {
+                "day": "Пятница",
+                "time": "13:00",
+                "description": ""
+            },
+            {
+                "day": "Пятница",
+                "time": "14:00",
+                "description": ""
+            },
+            {
+                "day": "Пятница",
+                "time": "15:00",
+                "description": ""
+            },
+            {
+                "day": "Пятница",
+                "time": "16:00",
+                "description": ""
+            },
+            {
+                "day": "Пятница",
+                "time": "17:00",
+                "description": ""
+            },
+            {
+                "day": "Пятница",
+                "time": "18:00",
+                "description": ""
+            },
+            {
+                "day": "Пятница",
+                "time": "19:00",
+                "description": ""
+            },
+            {
+                "day": "Суббота",
+                "time": "08:30",
+                "description": ""
+            },
+            {
+                "day": "Суббота",
+                "time": "09:30",
+                "description": ""
+            },
+            {
+                "day": "Суббота",
+                "time": "10:30",
+                "description": ""
+            },
+            {
+                "day": "Суббота",
+                "time": "11:30",
+                "description": ""
+            },
+            {
+                "day": "Суббота",
+                "time": "12:30",
+                "description": ""
+            },
+            {
+                "day": "Суббота",
+                "time": "13:30",
+                "description": ""
+            },
+            {
+                "day": "Суббота",
+                "time": "14:30",
+                "description": ""
+            },
+            {
+                "day": "Суббота",
+                "time": "15:30",
+                "description": ""
+            },
+            {
+                "day": "Суббота",
+                "time": "16:30",
+                "description": ""
+            },
+            {
+                "day": "Суббота",
+                "time": "17:30",
+                "description": ""
+            },
+            {
+                "day": "Суббота",
+                "time": "18:30",
+                "description": ""
+            },
+            {
+                "day": "Суббота",
+                "time": "19:30",
+                "description": ""
+            },
+            {
+                "day": "Воскресенье",
+                "time": "08:00",
+                "description": ""
+            },
+            {
+                "day": "Воскресенье",
+                "time": "09:00",
+                "description": ""
+            },
+            {
+                "day": "Воскресенье",
+                "time": "10:00",
+                "description": ""
+            },
+            {
+                "day": "Воскресенье",
+                "time": "11:00",
+                "description": ""
+            },
+            {
+                "day": "Воскресенье",
+                "time": "12:00",
+                "description": ""
+            },
+            {
+                "day": "Воскресенье",
+                "time": "13:00",
+                "description": ""
+            },
+            {
+                "day": "Воскресенье",
+                "time": "14:00",
+                "description": ""
+            },
+            {
+                "day": "Воскресенье",
+                "time": "15:00",
+                "description": ""
+            },
+            {
+                "day": "Воскресенье",
+                "time": "16:00",
+                "description": ""
+            },
+            {
+                "day": "Воскресенье",
+                "time": "17:00",
+                "description": ""
+            },
+            {
+                "day": "Воскресенье",
+                "time": "18:00",
+                "description": ""
+            },
+            {
+                "day": "Воскресенье",
+                "time": "19:00",
+                "description": ""
+            },
+            {
+                "day": "Среда",
+                "time": "13:00",
+                "description": "Физика"
+            }
+        ]
+    },
+    "Азамат (FF2)": {
+        "name": "Регина",
+        "schedule": [
+            {
+                "day": "Вторник",
+                "time": "16:00",
+                "description": ""
+            },
+            {
+                "day": "Четверг",
+                "time": "16:00",
+                "description": ""
+            }
+        ]
+    },
+    "relxia": {
+        "name": "Карина",
+        "schedule": [
+            {
+                "day": "Понедельник",
+                "time": "17:00",
+                "description": ""
+            },
+            {
+                "day": "Вторник",
+                "time": "17:00",
+                "description": ""
+            }
+        ]
+    },
+    "Давид": {
+        "name": "------",
+        "schedule": [
+            {
+                "day": "Понедельник",
+                "time": "18:30",
+                "description": ""
+            },
+            {
+                "day": "Четверг",
+                "time": "18:00",
+                "description": ""
+            }
+        ]
+    },
+    "Алиса и Настя": {
+        "name": "---------",
+        "schedule": [
+            {
+                "day": "Понедельник",
+                "time": "19:00",
+                "description": ""
+            },
+            {
+                "day": "Четверг",
+                "time": "19:45",
+                "description": ""
+            }
+        ]
+    },
+    "Ксюша": {
+        "name": "------",
+        "schedule": [
+            {
+                "day": "Вторник",
+                "time": "19:00",
+                "description": ""
+            },
+            {
+                "day": "Четверг",
+                "time": "19:00",
+                "description": ""
+            }
+        ]
+    },
+    "FF0": {
+        "name": "--------",
+        "schedule": [
+            {
+                "day": "Вторник",
+                "time": "20:00",
+                "description": "40 мин"
+            },
+            {
+                "day": "Четверг",
+                "time": "19:00",
+                "description": "40 мин"
+            }
+        ]
+    },
+    "Артем (FF2)": {
+        "name": "-------",
+        "schedule": [
+            {
+                "day": "Понедельник",
+                "time": "20:00",
+                "description": ""
+            },
+            {
+                "day": "Вторник",
+                "time": "20:00",
+                "description": ""
+            },
+            {
+                "day": "Пятница",
+                "time": "20:00",
+                "description": ""
+            }
+        ]
+    },
+    "Карим": {
+        "name": "-------",
+        "schedule": [
+            {
+                "day": "Среда",
+                "time": "20:00",
+                "description": ""
+            }
+        ]
+    }
+}

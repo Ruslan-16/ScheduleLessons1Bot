@@ -53,6 +53,18 @@ def clean_sent_reminders():
         k for k in sent_reminders_1h if parse_with_tz(k[1]) > now
     }
 
+def reset_schedule_to_default():
+    global temporary_schedule
+    try:
+        with open("default_users.json", "r", encoding="utf-8") as f:
+            default_data = json.load(f)
+        with open("users.json", "w", encoding="utf-8") as f:
+            json.dump(default_data, f, ensure_ascii=False, indent=4)
+        temporary_schedule = default_data
+        print("[INFO] Расписание сброшено к стандартному")
+    except Exception as e:
+        print(f"[ERROR] Не удалось сбросить расписание: {e}")
+
 async def safe_send(bot, chat_id, text):
     try:
         await bot.send_message(chat_id=chat_id, text=text)
@@ -151,10 +163,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if user_id == ADMIN_ID:
         user_data[user_name] = user_id
-        await update.message.reply_text(welcome_text)
+        await update.message.reply_text(welcome_text, reply_markup=menu(True))
     elif user_name in temporary_schedule:
         user_data[user_name] = user_id
-        await update.message.reply_text(welcome_text)
+        await update.message.reply_text(welcome_text, reply_markup=menu(False))
     else:
         await update.message.reply_text("Вы не в расписании.")
 
@@ -221,21 +233,33 @@ async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
     try:
         new_lesson = json.loads(json_str)
 
+        # 🚀 Валидация day и time:
+        days = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
+        if new_lesson["day"] not in days:
+            await update.message.reply_text("Ошибка: некорректный день недели.")
+            return
+
+        try:
+            datetime.strptime(new_lesson["time"], "%H:%M")
+        except ValueError:
+            await update.message.reply_text("Ошибка: некорректное время. Формат HH:MM.")
+            return
+
+        # 🚀 Добавляем новое занятие
         if user_name not in temporary_schedule:
             await update.message.reply_text("Пользователь не найден.")
             return
 
-        # Добавляем новое занятие
         temporary_schedule[user_name]["schedule"].append(new_lesson)
 
-        # Сохраняем в файл
+        # 🚀 Сохраняем в файл
         with open("users.json", "w", encoding="utf-8") as f:
             json.dump(temporary_schedule, f, ensure_ascii=False, indent=4)
 
-        # Подтверждение админу
+        # 🚀 Подтверждение админу
         await update.message.reply_text(f"Новое занятие добавлено для {user_name}.")
 
-        # Уведомление ученику
+        # 🚀 Уведомление ученику
         chat_id = user_data.get(user_name)
         if chat_id:
             text = (
@@ -274,6 +298,8 @@ def schedule_jobs(app):
     scheduler.add_job(clean_sent_reminders, CronTrigger(hour=0))
     scheduler.add_job(send_reminders_24h, "interval", minutes=15, args=[app])
     scheduler.add_job(send_reminders_1h, "interval", minutes=5, args=[app])
+    scheduler.add_job(reset_schedule_to_default, CronTrigger(day_of_week='sun', hour=23, minute=59))
+
     scheduler.start()
 
 def main():
