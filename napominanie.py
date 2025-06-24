@@ -184,7 +184,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     user_id = update.effective_chat.id
 
-    # Если в режиме ожидания JSON
+    # 1. Проверка режима (редактирование, удаление, перенос)
     if "mode" in context.user_data:
         mode = context.user_data.pop("mode")
         if mode == "edit":
@@ -195,7 +195,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await handle_move_input(update, context)
         return
 
-    # Общие кнопки
+    # 2. Общие действия
     if text == "Старт":
         await start(update, context)
         return
@@ -203,24 +203,29 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_my_schedule(update)
         return
 
-    # Только для администратора
+    # 3. Админские действия
     if user_id == ADMIN_ID:
-        print(f"[DEBUG] Admin pressed: {text}")  # сюда верни лог
+        print(f"[DEBUG] Админ нажал кнопку: '{text}'")
         if text == "Все расписания":
-            await show_all(update); return
+            await show_all(update)
+            return
         if text == "Ученики":
-            await show_users(update); return
+            await show_users(update)
+            return
         if text == "Редактировать расписание":
             context.user_data["mode"] = "edit"
-            await edit_schedule_prompt(update, context); return
+            await edit_schedule_prompt(update, context)
+            return
         if text == "Удалить урок":
             context.user_data["mode"] = "delete"
-            await delete_schedule_prompt(update, context); return
+            await delete_schedule_prompt(update, context)
+            return
         if text == "Перенести занятие":
             context.user_data["mode"] = "move"
-            await move_schedule_prompt(update, context); return
+            await move_schedule_prompt(update, context)
+            return
 
-    # Если мы здесь — команда не распознана
+    # 4. Неизвестная команда
     await update.message.reply_text("Неизвестная команда.")
 
 async def handle_move_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
