@@ -14,6 +14,7 @@ from telegram.error import NetworkError, RetryAfter, TimedOut
 
 load_dotenv()
 admin_edit_mode = False  # режим ожидания ввода JSON-расписания
+admin_delete_mode = False  # режим удаления урока
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
@@ -174,7 +175,8 @@ def menu(admin=False):
     buttons = [[KeyboardButton("Старт")]]
     if admin:
         buttons.append([KeyboardButton("Все расписания"), KeyboardButton("Ученики")])
-        buttons.append([KeyboardButton("Редактировать расписание")])
+        buttons.append([KeyboardButton("Редактировать расписание"), KeyboardButton("Удалить урок")])
+
     else:
         buttons.append([KeyboardButton("Моё расписание")])
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
@@ -184,9 +186,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
     # 🔄 Если включен режим редактирования, обрабатываем JSON
-    if admin_edit_mode and update.effective_chat.id == ADMIN_ID:
-        await handle_admin_input(update, context)
-        admin_edit_mode = False
+    if "mode" in context.user_data:
+        mode = context.user_data.pop("mode")
+        if mode == "edit":
+            await handle_admin_input(update, context)
+        elif mode == "delete":
+            await handle_delete_input(update, context)
         return
 
     if text == "Старт":
@@ -199,6 +204,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_users(update)
     elif text == "Редактировать расписание" and update.effective_chat.id == ADMIN_ID:
         await edit_schedule_prompt(update, context)
+    elif text == "Удалить урок" and update.effective_chat.id == ADMIN_ID:
+        await delete_schedule_prompt(update, context)
     else:
         await update.message.reply_text("Неизвестная команда.")
 
@@ -217,6 +224,19 @@ RuslanAlmasovich
     )
 
     return
+
+async def delete_schedule_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        """Введите имя пользователя и данные урока для удаления:
+
+ИмяПользователя
+{"day": "Понедельник", "time": "10:00"}
+
+Пример:
+RuslanAlmasovich
+{"day": "Среда", "time": "13:00"}"""
+    )
+    context.user_data["awaiting_deletion"] = True
 
 async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != ADMIN_ID:
@@ -273,6 +293,51 @@ async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
     except Exception as e:
         await update.message.reply_text(f"Ошибка: {e}")
 
+async def handle_delete_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.id != ADMIN_ID:
+        return
+
+    lines = update.message.text.strip().split("\n")
+    if len(lines) != 2:
+        await update.message.reply_text("Ошибка формата. Введите имя и JSON через новую строку.")
+        return
+
+    user_name, json_str = lines
+    user_name = user_name.strip()
+
+    try:
+        to_delete = json.loads(json_str)
+        if user_name not in temporary_schedule:
+            await update.message.reply_text("Пользователь не найден.")
+            return
+
+        # Удаляем урок, если совпадает day и time
+        schedule = temporary_schedule[user_name]["schedule"]
+        updated_schedule = [
+            lesson for lesson in schedule
+            if not (lesson["day"] == to_delete["day"] and lesson["time"] == to_delete["time"])
+        ]
+
+        if len(updated_schedule) == len(schedule):
+            await update.message.reply_text("Урок с такими параметрами не найден.")
+            return
+
+        temporary_schedule[user_name]["schedule"] = updated_schedule
+
+        # Обновляем файл
+        with open("users.json", "w", encoding="utf-8") as f:
+            json.dump(temporary_schedule, f, ensure_ascii=False, indent=4)
+
+        await update.message.reply_text(f"Урок удалён у пользователя {user_name}.")
+
+        # Уведомление ученику
+        chat_id = user_data.get(user_name)
+        if chat_id:
+            await safe_send(context.bot, chat_id, f"❌ Занятие в {to_delete['day']} {to_delete['time']} было удалено.")
+
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка: {e}")
+
 async def show_my_schedule(update: Update):
     user = update.effective_chat.username
     data = temporary_schedule.get(user)
@@ -292,6 +357,44 @@ async def show_all(update: Update):
 async def show_users(update: Update):
     await update.message.reply_text("\n".join(user_data.keys()))
 
+async def delete_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.id != ADMIN_ID:
+        await update.message.reply_text("У вас нет прав для выполнения этой команды.")
+        return
+
+    try:
+        lines = update.message.text.strip().split("\n")
+        if len(lines) != 3:
+            await update.message.reply_text("Формат: ИмяПользователя\\nДень\\nВремя (HH:MM)")
+            return
+
+        user_name, day, time = [line.strip() for line in lines]
+
+        if user_name not in temporary_schedule:
+            await update.message.reply_text("Пользователь не найден.")
+            return
+
+        schedule = temporary_schedule[user_name]["schedule"]
+        new_schedule = [l for l in schedule if not (l['day'] == day and l['time'] == time)]
+
+        if len(schedule) == len(new_schedule):
+            await update.message.reply_text("Занятие не найдено.")
+            return
+
+        temporary_schedule[user_name]["schedule"] = new_schedule
+
+        with open("users.json", "w", encoding="utf-8") as f:
+            json.dump(temporary_schedule, f, ensure_ascii=False, indent=4)
+
+        await update.message.reply_text(f"Занятие {day} {time} удалено у пользователя {user_name}.")
+
+        chat_id = user_data.get(user_name)
+        if chat_id:
+            await safe_send(context.bot, chat_id, f"❌ Занятие в {day} {time} было удалено из вашего расписания.")
+
+    except Exception as e:
+        await update.message.reply_text(f"[ERROR] {e}")
+
 def schedule_jobs(app):
     scheduler = AsyncIOScheduler()
     scheduler.add_job(update_user_data, "interval", minutes=5)
@@ -309,9 +412,10 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, button_handler))
     app.add_handler(CommandHandler("test_reminders", test_reminders))
+    app.add_handler(CommandHandler("delete_lesson", delete_lesson))
+
     print("Бот запущен...")
     app.run_polling()
-
 
 if __name__ == "__main__":
     try:
