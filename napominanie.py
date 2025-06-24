@@ -14,7 +14,6 @@ from telegram.error import NetworkError, RetryAfter, TimedOut
 
 load_dotenv()
 admin_edit_mode = False  # режим ожидания ввода JSON-расписания
-admin_delete_mode = False  # режим удаления урока
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
@@ -176,38 +175,111 @@ def menu(admin=False):
     if admin:
         buttons.append([KeyboardButton("Все расписания"), KeyboardButton("Ученики")])
         buttons.append([KeyboardButton("Редактировать расписание"), KeyboardButton("Удалить урок")])
-
+        buttons.append([KeyboardButton("Перенести занятие")])
     else:
         buttons.append([KeyboardButton("Моё расписание")])
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global admin_edit_mode
     text = update.message.text
+    user_id = update.effective_chat.id
 
-    # 🔄 Если включен режим редактирования, обрабатываем JSON
     if "mode" in context.user_data:
         mode = context.user_data.pop("mode")
         if mode == "edit":
             await handle_admin_input(update, context)
         elif mode == "delete":
             await handle_delete_input(update, context)
+        elif mode == "move":
+            await handle_move_input(update, context)
         return
 
     if text == "Старт":
         await start(update, context)
-    elif text == "Моё расписание":
+        return
+    if text == "Моё расписание":
         await show_my_schedule(update)
-    elif text == "Все расписания" and update.effective_chat.id == ADMIN_ID:
-        await show_all(update)
-    elif text == "Ученики" and update.effective_chat.id == ADMIN_ID:
-        await show_users(update)
-    elif text == "Редактировать расписание" and update.effective_chat.id == ADMIN_ID:
-        await edit_schedule_prompt(update, context)
-    elif text == "Удалить урок" and update.effective_chat.id == ADMIN_ID:
-        await delete_schedule_prompt(update, context)
-    else:
-        await update.message.reply_text("Неизвестная команда.")
+        return
+
+    if user_id == ADMIN_ID:
+        if text == "Все расписания":
+            await show_all(update); return
+        if text == "Ученики":
+            await show_users(update); return
+        if text == "Редактировать расписание":
+            await edit_schedule_prompt(update, context); return
+        if text == "Удалить урок":
+            await delete_schedule_prompt(update, context); return
+        if text == "Перенести занятие":
+            await move_schedule_prompt(update, context); return
+
+    await update.message.reply_text("Неизвестная команда.")
+
+async def handle_move_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.id != ADMIN_ID:
+        return
+
+    lines = update.message.text.strip().split("\n", 1)
+    if len(lines) != 2:
+        await update.message.reply_text("Ошибка формата. Нужно имя и JSON через новую строку.")
+        return
+
+    user_name, json_str = lines
+    try:
+        data = json.loads(json_str)
+    except json.JSONDecodeError:
+        await update.message.reply_text("Ошибка: некорректный JSON.")
+        return
+
+    # Проверка полей
+    for field in ("day", "time", "new_day", "new_time"):
+        if field not in data:
+            await update.message.reply_text(f"Ошибка: нет поля '{field}'.")
+            return
+
+    # User exists?
+    if user_name not in temporary_schedule:
+        await update.message.reply_text("Пользователь не найден.")
+        return
+
+    lessons = temporary_schedule[user_name]["schedule"]
+    # Поиск урока
+    idx = next((i for i, l in enumerate(lessons) if l["day"] == data["day"] and l["time"] == data["time"]), None)
+    if idx is None:
+        await update.message.reply_text("Урок не найден.")
+        return
+
+    # Перенос
+    lesson = lessons[idx]
+    lesson["day"], lesson["time"] = data["new_day"], data["new_time"]
+
+    # Сохраняем в файл
+    with open("users.json", "w", encoding="utf-8") as f:
+        json.dump(temporary_schedule, f, ensure_ascii=False, indent=4)
+
+    await update.message.reply_text(f"Урок перенесён у {user_name}:\n"
+                                    f"{data['day']} {data['time']} → {data['new_day']} {data['new_time']}")
+
+    # Уведомление пользователя (если он зарегистрирован)
+    chat_id = user_data.get(user_name)
+    if chat_id:
+        await safe_send(context.bot, chat_id,
+                        f"🔄 Ваше занятие {data['day']} в {data['time']} перенесено на "
+                        f"{data['new_day']} в {data['new_time']}.")
+
+async def move_schedule_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["mode"] = "move"
+    await update.message.reply_text(
+        """Введите данные для переноса занятия в формате:
+
+ИмяПользователя
+{"day": "Понедельник", "time": "10:00", "new_day": "Вторник", "new_time": "11:30"}
+
+Пример:
+RuslanAlmasovich
+{"day": "Среда", "time": "13:00", "new_day": "Четверг", "new_time": "14:00"}"""
+    )
+    return
 
 async def edit_schedule_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global admin_edit_mode
@@ -413,6 +485,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, button_handler))
     app.add_handler(CommandHandler("test_reminders", test_reminders))
     app.add_handler(CommandHandler("delete_lesson", delete_lesson))
+    app.add_handler(CommandHandler("move_lesson", move_schedule_prompt))
 
     print("Бот запущен...")
     app.run_polling()
