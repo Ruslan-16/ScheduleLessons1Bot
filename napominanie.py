@@ -234,49 +234,57 @@ async def handle_move_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     lines = update.message.text.strip().split("\n", 1)
     if len(lines) != 2:
-        await update.message.reply_text("Ошибка формата. Нужно имя и JSON через новую строку.")
+        await update.message.reply_text("Ошибка формата. Должно быть 2 строки: пользователь и JSON.")
         return
 
     user_name, json_str = lines
+    user_name = user_name.strip()
+
     try:
         data = json.loads(json_str)
     except json.JSONDecodeError:
-        await update.message.reply_text("Ошибка: некорректный JSON.")
+        await update.message.reply_text("Ошибка: JSON некорректен.")
         return
 
-    # Проверка полей
-    for field in ("day", "time", "new_day", "new_time"):
-        if field not in data:
-            await update.message.reply_text(f"Ошибка: нет поля '{field}'.")
-            return
+    required = ("day","time","new_day","new_time")
+    missing = [f for f in required if f not in data]
+    if missing:
+        await update.message.reply_text(f"Ошибка: отсутствуют поля {missing}")
+        return
 
-    # User exists?
     if user_name not in temporary_schedule:
         await update.message.reply_text("Пользователь не найден.")
         return
 
     lessons = temporary_schedule[user_name]["schedule"]
-    # Поиск урока
-    idx = next((i for i, l in enumerate(lessons) if l["day"] == data["day"] and l["time"] == data["time"]), None)
+
+    # Логирование текущих уроков для отладки
+    lesson_list_str = "\n".join([f"{l['day']} {l['time']}" for l in lessons])
+    await update.message.reply_text(f"📋 Текущее расписание:\n{lesson_list_str}")
+
+    # Поиск
+    idx = next((i for i, l in enumerate(lessons)
+                if l["day"] == data["day"] and l["time"] == data["time"]), None)
     if idx is None:
-        await update.message.reply_text("Урок не найден.")
+        await update.message.reply_text("❗ Урок не найден. Проверьте день/время ещё раз.")
         return
 
     # Перенос
-    lesson = lessons[idx]
-    lesson["day"], lesson["time"] = data["new_day"], data["new_time"]
+    lessons[idx]["day"] = data["new_day"]
+    lessons[idx]["time"] = data["new_time"]
 
-    # Сохраняем в файл
     with open("users.json", "w", encoding="utf-8") as f:
         json.dump(temporary_schedule, f, ensure_ascii=False, indent=4)
 
-    await update.message.reply_text(f"Урок перенесён у {user_name}:\n"
-                                    f"{data['day']} {data['time']} → {data['new_day']} {data['new_time']}")
+    await update.message.reply_text(
+        f"✅ Урок у {user_name} перенесён:\n"
+        f"{data['day']} {data['time']} → {data['new_day']} {data['new_time']}"
+    )
 
-    # Уведомление пользователя (если он зарегистрирован)
     chat_id = user_data.get(user_name)
     if chat_id:
         await safe_send(context.bot, chat_id,
+                        f"Hey, just a quick note!"
                         f"🔄 Ваше занятие {data['day']} в {data['time']} перенесено на "
                         f"{data['new_day']} в {data['new_time']}.")
 
@@ -288,9 +296,7 @@ async def move_schedule_prompt(update: Update, context: ContextTypes.DEFAULT_TYP
 ИмяПользователя
 {"day": "Понедельник", "time": "10:00", "new_day": "Вторник", "new_time": "11:30"}
 
-Пример:
-RuslanAlmasovich
-{"day": "Среда", "time": "13:00", "new_day": "Четверг", "new_time": "14:00"}"""
+Убедитесь, что день и время точно совпадают с текущим расписанием."""
     )
     return
 
@@ -418,7 +424,7 @@ async def handle_delete_input(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Уведомление ученику
         chat_id = user_data.get(user_name)
         if chat_id:
-            await safe_send(context.bot, chat_id, f"❌ Занятие в {to_delete['day']} {to_delete['time']} было удалено.")
+            await safe_send(context.bot, chat_id, f"Greetings! 👋 Подтверждаем отмену занятия {to_delete['day']} {to_delete['time']}")
 
     except Exception as e:
         await update.message.reply_text(f"Ошибка: {e}")
