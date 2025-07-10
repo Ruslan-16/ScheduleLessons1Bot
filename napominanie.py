@@ -446,7 +446,11 @@ async def show_all(update: Update):
     await update.message.reply_text("\n\n".join(text))
 
 async def show_users(update: Update):
-    await update.message.reply_text("\n".join(user_data.keys()))
+    active_users = [user for user in temporary_schedule if user in user_data]
+    if not active_users:
+        await update.message.reply_text("Нет активных учеников.")
+    else:
+        await update.message.reply_text("\n".join(active_users))
 
 async def delete_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != ADMIN_ID:
@@ -492,7 +496,7 @@ def schedule_jobs(app):
     scheduler.add_job(clean_sent_reminders, CronTrigger(hour=0))
     scheduler.add_job(send_reminders_24h, "interval", minutes=15, args=[app])
     scheduler.add_job(send_reminders_1h, "interval", minutes=5, args=[app])
-    scheduler.add_job(reset_schedule_to_default, CronTrigger(day_of_week='sun', hour=23, minute=59))
+    scheduler.add_job(reset_schedule_to_default, CronTrigger(day_of_week='sun', hour=19, minute=00))
 
     scheduler.start()
 

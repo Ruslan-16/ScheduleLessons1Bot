@@ -2,101 +2,51 @@
   "Helga13Isa": {
     "name": "Егор (мама Ольга)",
     "schedule": [
-      {
-        "day": "Понедельник",
-        "time": "20:00",
-        "description": ""
-      },
-      {
-        "day": "Пятница",
-        "time": "10:15",
-        "description": ""
-      }
+      { "day": "Понедельник", "time": "20:00", "description": "" },
+      { "day": "Пятница", "time": "10:15", "description": "" }
     ]
   },
   "albina_funt": {
     "name": "Альбина (мама Саши и Миши)",
     "schedule": [
-      {
-        "day": "Понедельник",
-        "time": "10:15",
-        "description": ""
-      },
-      {
-        "day": "Среда",
-        "time": "09:15",
-        "description": "Английский у Саши"
-      }
+      { "day": "Понедельник", "time": "10:15", "description": "" },
+      { "day": "Среда", "time": "09:15", "description": "Английский у Саши" }
     ]
   },
   "lightnight": {
     "name": "Виктория Королева",
     "schedule": [
-      {
-        "day": "Понедельник",
-        "time": "10:15",
-        "description": ""
-      },
-      {
-        "day": "Пятница",
-        "time": "09:15",
-        "description": ""
-      }
+      { "day": "Понедельник", "time": "09:15", "description": "" },
+      { "day": "Пятница", "time": "09:15", "description": "" }
     ]
   },
   "ZarinaO757EE": {
     "name": "Зарина (мама Даниеля и Алана)",
     "schedule": [
-      {
-        "day": "Понедельник",
-        "time": "08:15",
-        "description": "Английский у Даниеля"
-      },
-      {
-        "day": "Среда",
-        "time": "19:00",
-        "description": "Английский у Даниеля"
-      },
-      {
-        "day": "Понедельник",
-        "time": "10:00",
-        "description": "Английский у Алана"
-      },
-      {
-        "day": "Четверг",
-        "time": "10:00",
-        "description": "Английский у Алана"
-      }
+      { "day": "Понедельник", "time": "08:15", "description": "Английский у Даниеля" },
+      { "day": "Среда", "time": "19:00", "description": "Английский у Даниеля" },
+      { "day": "Понедельник", "time": "10:00", "description": "Английский у Алана" },
+      { "day": "Четверг", "time": "10:00", "description": "Английский у Алана" }
     ]
   },
   "fallenix_bex": {
     "name": "Рамина",
     "schedule": [
-      {
-        "day": "Понедельник",
-        "time": "14:00",
-        "description": ""
-      },
-      {
-        "day": "Среда",
-        "time": "14:00",
-        "description": ""
-      }
+      { "day": "Понедельник", "time": "14:00", "description": "" },
+      { "day": "Среда", "time": "14:00", "description": "" }
     ]
   },
   "Nata020386": {
     "name": "Матвей (мама Наталья)",
     "schedule": [
-      {
-        "day": "Понедельник",
-        "time": "12:00",
-        "description": ""
-      },
-      {
-        "day": "Четверг",
-        "time": "12:00",
-        "description": ""
-      }
+      { "day": "Понедельник", "time": "12:00", "description": "" },
+      { "day": "Среда", "time": "12:00", "description": "" }
+    ]
+  },
+  "Leisan1285": {
+    "name": "Аделина 2 кл (мама Лейсан)",
+    "schedule": [
+      { "day": "Среда", "time": "10:15", "description": "" }
     ]
   }
 }
