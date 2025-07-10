@@ -38,6 +38,18 @@ def load_default_schedule():
         print(f"[ERROR] Не удалось загрузить расписание: {e}")
         temporary_schedule = {}
 
+def load_user_data():
+    global user_data
+    try:
+        with open("user_data.json", "r", encoding="utf-8") as f:
+            user_data = json.load(f)
+    except FileNotFoundError:
+        user_data = {}
+
+def save_user_data():
+    with open("user_data.json", "w", encoding="utf-8") as f:
+        json.dump(user_data, f, ensure_ascii=False, indent=4)
+
 def clean_sent_reminders():
     now = datetime.now(local_tz)
     global sent_reminders_24h, sent_reminders_1h
@@ -151,8 +163,10 @@ def get_lesson_datetime(day, time_str):
     return lesson_datetime
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_name = update.effective_chat.username
+    user_name = update.effective_user.username or update.effective_user.first_name
     user_id = update.effective_chat.id
+    now = datetime.now(local_tz).strftime("%Y-%m-%d %H:%M:%S")
+
     welcome_text = (
         "Welcome! 😊👋\n"
         "Я — Ваш бот-помощник 🤖💬\n"
@@ -161,11 +175,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "А если вдруг захотите сами заглянуть в расписание — я всегда к вашим услугам! 📖"
     )
 
+    logging.info(f"[START] Пользователь {user_name} ({user_id}) запустил бота в {now}")
+
     if user_id == ADMIN_ID:
         user_data[user_name] = user_id
+        save_user_data()
         await update.message.reply_text(welcome_text, reply_markup=menu(True))
     elif user_name in temporary_schedule:
         user_data[user_name] = user_id
+        save_user_data()
         await update.message.reply_text(welcome_text, reply_markup=menu(False))
     else:
         await update.message.reply_text("Вы не в расписании.")
@@ -446,11 +464,12 @@ async def show_all(update: Update):
     await update.message.reply_text("\n\n".join(text))
 
 async def show_users(update: Update):
-    active_users = [user for user in temporary_schedule if user in user_data]
-    if not active_users:
+    if not user_data:
         await update.message.reply_text("Нет активных учеников.")
-    else:
-        await update.message.reply_text("\n".join(active_users))
+        return
+    # Только те, кто запускал бота (user_data)
+    active_users = list(user_data.keys())
+    await update.message.reply_text("Активные ученики:\n" + "\n".join(active_users))
 
 async def delete_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != ADMIN_ID:
@@ -502,6 +521,7 @@ def schedule_jobs(app):
 
 def main():
     load_default_schedule()
+    load_user_data()
     app = Application.builder().token(BOT_TOKEN).build()
     schedule_jobs(app)
     app.add_handler(CommandHandler("start", start))
