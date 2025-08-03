@@ -1,12 +1,19 @@
 {
-  "Helga13Isa": {
-    "name": "Егор (мама Ольга)",
+  "AnastasiaGumarova": {
+    "name": "Anastasia",
     "schedule": [
-      { "day": "Понедельник", "time": "20:00", "description": "" },
-      { "day": "Пятница", "time": "10:15", "description": "" }
+      { "day": "Среда", "time": "08:15", "description": "Английский" },
+      { "day": "Пятница", "time": "08:15", "description": "Английский" }
     ]
   },
-  "albina_funt": {
+  "BlazhnovaMarina": {
+    "name": "Марина",
+    "schedule": [
+      { "day": "Понедельник", "time": "13:20", "description": "" },
+      { "day": "Четверг", "time": "14:30", "description": "" }
+    ]
+  },  
+   "albina_funt": {
     "name": "Альбина (мама Саши и Миши)",
     "schedule": [
       { "day": "Понедельник", "time": "10:15", "description": "" },
