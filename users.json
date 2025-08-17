@@ -1,9 +1,9 @@
 {
-  "AnastasiaGumarova": {
-    "name": "Anastasia",
+  "kukunova81": {
+    "name": "Артем",
     "schedule": [
-      { "day": "Среда", "time": "08:15", "description": "Английский" },
-      { "day": "Пятница", "time": "08:15", "description": "Английский" }
+      { "day": "Понедельник", "time": "19:00", "description": "Английский у Артёма" },
+      { "day": "Пятница", "time": "19:00", "description": "Английский у Артёма" }
     ]
   },
   "BlazhnovaMarina": {
@@ -36,18 +36,10 @@
       { "day": "Четверг", "time": "10:00", "description": "Английский у Алана" }
     ]
   },
-  "fallenix_bex": {
-    "name": "Рамина",
+  "RenataIlh": {
+    "name": "Ева",
     "schedule": [
-      { "day": "Понедельник", "time": "14:00", "description": "" },
-      { "day": "Среда", "time": "14:00", "description": "" }
-    ]
-  },
-  "Nata020386": {
-    "name": "Матвей (мама Наталья)",
-    "schedule": [
-      { "day": "Понедельник", "time": "12:00", "description": "" },
-      { "day": "Среда", "time": "12:00", "description": "" }
+      { "day": "Понедельник", "time": "11:00", "description": "Английский у Евы" }
     ]
   },
   "Leisan1285": {
@@ -57,3 +49,7 @@
     ]
   }
 }
+
+
+
+
