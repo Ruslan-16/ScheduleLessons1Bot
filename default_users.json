@@ -47,8 +47,11 @@
     "schedule": [
       { "day": "Среда", "time": "10:15", "description": "" }
     ]
+  },
+  "svetlanaa2006": {
+    "name": «Артур 6 кл,
+    "schedule": [
+      { "day": "Пятница", "time": "10:15", "description": "Занятие  по английскому у Артура" }
+    ]
   }
 }
-
-
-
